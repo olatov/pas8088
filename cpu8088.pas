@@ -362,6 +362,7 @@ type
     procedure HandleInt3;  { $CC }
     procedure HandleIntImm8;  { $CD }
     procedure HandleInto;  { $CE }
+    procedure HandleIret;  { $CF }
 
     procedure HandleGRP2RM8Const1; { D0 }
     procedure HandleGRP2RM16Const1; { D1 }
@@ -1420,6 +1421,7 @@ begin
       $CC:      FInstructionHandlers[I] := @HandleInt3;
       $CD:      FInstructionHandlers[I] := @HandleIntImm8;
       $CE:      FInstructionHandlers[I] := @HandleInto;
+      $CF:      FInstructionHandlers[I] := @HandleIret;
       $D0:      FInstructionHandlers[I] := @HandleGRP2RM8Const1;
       $D1:      FInstructionHandlers[I] := @HandleGRP2RM16Const1;
       $D2:      FInstructionHandlers[I] := @HandleGRP2RM8CL;
@@ -2421,6 +2423,13 @@ end;
 procedure TCpu8088.HandleInto;
 begin
   if Registers.Flags.OF_ then RaiseSoftwareInterrupt(4);
+end;
+
+procedure TCpu8088.HandleIret;
+begin
+  Registers.IP := Pop;
+  Registers.CS := Pop;
+  Registers.Flags.SetWord(Pop);
 end;
 
 procedure TCpu8088.HandleGRP2RM8Const1;
