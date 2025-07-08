@@ -1238,11 +1238,7 @@ begin
     modRegister:
       Result := Registers.GetByIndex16(Registers.TRegIndex16(AModRM.Rm));
   else
-    begin
-      Result := MemoryBus.ReadByte(AModRM.Segment, AModRM.EffectiveAddr);
-      Result := Result
-        or (MemoryBus.ReadByte(AModRM.Segment, AModRM.EffectiveAddr + 1) shl 8);
-    end;
+    Result := ReadMemoryWord(AModRM.Segment, AModRM.EffectiveAddr);
   end;
 end;
 
@@ -1320,9 +1316,7 @@ end;
 
 function TCpu8088.Pop: Word;
 begin
-  Result := MemoryBus.ReadByte(StackSegment, Word(Registers.SP + 1));
-  Result := Result or (
-    MemoryBus.ReadByte(StackSegment, Word(Registers.SP + 2)) shl 8);
+  Result := ReadMemoryWord(StackSegment, Registers.SP + 1);
   Registers.SP := Registers.SP + 2;
 end;
 
@@ -1473,11 +1467,9 @@ end;
 
 procedure TCpu8088.EnterISR(ANumber: Byte);
 var
-  Vector: TPhysicalAddress;
-  VectorCS, VectorIP: Word;
+  Vector: Word;
 begin
-  if Assigned(InterruptHook) and InterruptHook(Self, ANumber) then
-    Exit;
+  if Assigned(InterruptHook) and InterruptHook(Self, ANumber) then Exit;
 
   Push(Registers.Flags.GetWord);
   Push(Registers.CS);
@@ -1486,10 +1478,10 @@ begin
   Registers.Flags.TF := False;
 
   Vector := ANumber * 4;
-  VectorCS := MemoryBus.ReadByte(Vector + 2) + (MemoryBus.ReadByte(Vector + 3) shl 8);
-  VectorIP := MemoryBus.ReadByte(Vector) + (MemoryBus.ReadByte(Vector + 1) shl 8);
-  Writeln(Format('Vector: %.4x:%.4x', [VectorCS, VectorIP]));
-  JumpFar(VectorCS, VectorIP);
+  Registers.CS := ReadMemoryWord(0, Vector + 2);
+  Registers.IP := ReadMemoryWord(0, Vector);
+  Writeln(Format('Entering ISR(%d), vector: %.4x:%.4x',
+    [ANumber, Registers.CS, Registers.IP]));
 end;
 
 procedure TCpu8088.HandleAddRM8Reg8;
