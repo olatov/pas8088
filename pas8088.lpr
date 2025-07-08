@@ -4,47 +4,74 @@ program pas8088;
 
 uses
   {$IFDEF UNIX}
-  cthreads,
+  //cthreads,
   {$ENDIF}
   Classes, SysUtils,
-  Cpu8088, Memory, IO;
+  Cpu8088, Memory, IO, Machine;
 
+function BuildMachine: TMachine;
 var
-  Cpu: TCpu8088;
   MemoryBus: TMemoryBus;
-  Prog: String;
-
-  BootstrapStream: TBytesStream;
-  ProgramStream: TFileStream;
-
+  BiosRom: TRomMemoryBlock;
+  BiosStream: TStream;
+  Ram: TRamMemoryBlock;
+  TestProgramStream: TStream;
 begin
-  Cpu := TCpu8088.Create(Nil);
-  MemoryBus := TMemoryBus.Create(Cpu);
-  Cpu.MemoryBus := MemoryBus;
-  Cpu.IOBus := TIOBus.Create(Cpu);
+  Result := TMachine.Create(Nil);
 
-  BootstrapStream := TBytesStream.Create([
+  { Cpu }
+  Result.InstallCpu(TCpu8088.Create(Result));
+
+  { I/O }
+  Result.InstallIOBus(TIOBus.Create(Result));
+
+  { BIOS ROM }
+  MemoryBus := TMemoryBus.Create(Result);
+
+  BiosRom := TRomMemoryBlock.Create(MemoryBus, 8 * 1024);
+  BiosStream := TBytesStream.Create([
     $EA, $00, $00, $60, $00   { jmp 0x0060:0x0000 }
   ]);
-  MemoryBus.LoadFromStream(BootstrapStream, $FFFF0);
-  FreeAndNil(BootstrapStream);
-
-  Prog := 'test';
-
-  ProgramStream := TFileStream.Create(Prog, fmOpenRead);
-  MemoryBus.LoadFromStream(ProgramStream, $00600);
-  FreeAndNil(ProgramStream);
 
   try
-    while not Cpu.Halted do Cpu.Tick;
+    BiosRom.LoadFromStream(BiosStream, 8192 - 16);
+  finally
+    FreeAndNil(BiosStream);
+  end;
+  MemoryBus.InstallMemoryBlock($FE000, BiosRom);
+
+  { RAM, test program }
+  Ram := TRamMemoryBlock.Create(MemoryBus, 128 * 1024);
+  TestProgramStream := TFileStream.Create('test.bin', fmOpenRead);
+  try
+    Ram.LoadFromStream(TestProgramStream, $00600);
+  finally
+    FreeAndNil(TestProgramStream);
+  end;
+
+  MemoryBus.InstallMemoryBlock($00000, Ram);
+
+  Result.InstallMemoryBus(MemoryBus);
+
+  Result.Initialize;
+end;
+
+var
+  Computer: TMachine;
+
+begin
+  Computer := BuildMachine;
+  try
+    while not (Computer.Cpu.Halted or (Computer.Cpu.Ticks > 1000)) do
+      Computer.Tick;
   except
     on E: Exception do
       Writeln('*** ERROR: ', E.Message, ' ***');
   end;
 
   Writeln;
-  Cpu.Registers.Log;
+  Computer.Cpu.Registers.Log;
 
-  FreeAndNil(Cpu);
+  FreeAndNil(Computer);
 end.
 

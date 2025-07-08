@@ -102,6 +102,11 @@
         <IsPartOfProject Value="True"/>
         <UnitName Value="IO"/>
       </Unit>
+      <Unit>
+        <Filename Value="machine.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Machine"/>
+      </Unit>
     </Units>
   </ProjectOptions>
   <CompilerOptions>
