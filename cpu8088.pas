@@ -1182,7 +1182,7 @@ end;
 function TCpu8088.ReadMemoryWord(ASegment, AOffset: Word): Word;
 begin
   Result := MemoryBus.ReadByte(ASegment, AOffset);
-  Result := Result and (MemoryBus.ReadByte(ASegment, AOffset + 1) shl 8);
+  Result := Result or (MemoryBus.ReadByte(ASegment, AOffset + 1) shl 8);
 end;
 
 function TCpu8088.WriteMemoryWord(ASegment, AOffset, AData: Word): Word;
