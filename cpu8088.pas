@@ -1047,29 +1047,63 @@ begin
 end;
 
 procedure TRegisters.Log;
+var
+  Builder: TStringBuilder;
 begin
-  Writeln(Format('AX: %.4x | BX: %.4x | CX: %.4x | DX: %.4x', [AX, BX, CX, DX]));
-  Writeln(Format('SI: %.4x | DI: %.4x | BP: %.4x', [SI, DI, BP]));
-  Writeln(Format('SS: %.4x | SP: %.4x', [SS, SP]));
-  Writeln(Format('DS: %.4x | ES: %.4x', [DS, ES]));
-  Writeln(Format('CS: %.4x | IP: %.4x', [CS, IP]));
+  Builder := TStringBuilder.Create;
+
+  Builder
+    .Append('AX [%.4x %6d %6d] :: ', [AX, AX, Int16(AX)])
+    .Append('AH [%.2x %6d %6d] :: ', [AH, AH, Int8(AL)])
+    .Append('AL [%.2x %6d %6d] ', [AL, AL, Int8(AL)])
+    .Append(LineEnding);
+
+  Builder
+    .Append('BX [%.4x %6d %6d] :: ', [BX, BX, Int16(BX)])
+    .Append('BH [%.2x %6d %6d] :: ', [BH, BH, Int8(BL)])
+    .Append('BL [%.2x %6d %6d] ', [BL, BL, Int8(BL)])
+    .Append(LineEnding);
+
+  Builder
+    .Append('CX [%.4x %6d %6d] :: ', [CX, CX, Int16(CX)])
+    .Append('CH [%.2x %6d %6d] :: ', [CH, CH, Int8(CL)])
+    .Append('CL [%.2x %6d %6d] ', [CL, CL, Int8(CL)])
+    .Append(LineEnding);
+  
+  Builder
+    .Append('DX [%.4x %6d %6d] :: ', [DX, DX, Int16(DX)])
+    .Append('DH [%.2x %6d %6d] :: ', [DH, DH, Int8(DL)])
+    .Append('DL [%.2x %6d %6d] ', [DL, DL, Int8(DL)])
+    .Append(LineEnding);
+
+  Builder
+    .Append('SI [%.4x %6d %6d] ', [SI, SI, Int16(SI)]).Append(LineEnding)
+    .Append('DI [%.4x %6d %6d] ', [DI, DI, Int16(DI)]).Append(LineEnding)
+    .Append('BP [%.4x %6d %6d] ', [BP, BP, Int16(BP)]).Append(LineEnding)
+    .Append('SP [%.4x %6d %6d] ', [SP, SP, Int16(SP)]).Append(LineEnding)
+    .Append('CS [%.4x %6d %6d] ', [CS, CS, Int16(CS)]).Append(LineEnding)
+    .Append('DS [%.4x %6d %6d] ', [DS, DS, Int16(DS)]).Append(LineEnding)
+    .Append('ES [%.4x %6d %6d] ', [ES, ES, Int16(ES)]).Append(LineEnding)
+    .Append('SS [%.4x %6d %6d] ', [SS, SS, Int16(SS)]).Append(LineEnding)
+    .Append('IP [%.4x %6d %6d] ', [IP, IP, Int16(IP)]).Append(LineEnding);
 
   // FLAGS e X:X:X:X:(OF):(DF):(IF):(TF):(SF):(ZF):X:(AF):X:(PF):X:(CF)
-  Writeln(Format('OF: %d | DF: %d | IF: %d | TF: %d | --: -',
+  Builder
+    .Append('Flags [%.4x %s]', [Flags.GetWord, BinStr(Flags.GetWord, 16)]).Append(LineEnding)
+    .Append('O(%d) D(%d) I(%d) T(%d) S(%d) Z(%d) A(%d) P(%d) C(%d)',
     [
       IfThen(Flags.Get(Flags.TFlags.flagO), 1, 0),
       IfThen(Flags.Get(Flags.TFlags.flagD), 1, 0),
       IfThen(Flags.Get(Flags.TFlags.flagI), 1, 0),
-      IfThen(Flags.Get(Flags.TFlags.flagT), 1, 0)
-    ]));
-  Writeln(Format('SF: %d | ZF: %d | AF: %d | PF: %d | CF: %d',
-    [
+      IfThen(Flags.Get(Flags.TFlags.flagT), 1, 0),
       IfThen(Flags.Get(Flags.TFlags.flagS), 1, 0),
       IfThen(Flags.Get(Flags.TFlags.flagZ), 1, 0),
       IfThen(Flags.Get(Flags.TFlags.flagA), 1, 0),
       IfThen(Flags.Get(Flags.TFlags.flagP), 1, 0),
       IfThen(Flags.Get(Flags.TFlags.flagC), 1, 0)
-    ]));
+    ]);
+  Writeln(Builder.ToString);
+  FreeAndNil(Builder);
 end;
 
 class function TRegisters.RegToStr(ARegIndex: TRegIndex8): String;
@@ -2793,16 +2827,17 @@ end;
 procedure TCpu8088.DumpCurrentInstruction;
 var
   I: Integer;
+  Buf: String = '';
 begin
   Write(
     Format('%.4x:%.4x | ',
     [FCurrentInstruction.CS, FCurrentInstruction.IP]));
 
   for I := 0 to FCurrentInstruction.Length - 1 do
-    Write(Format('%.2x', [FCurrentInstruction.Code[I]]));
+    Buf := Buf + IntToHex(FCurrentInstruction.Code[I], 1);
 
-  Write(Format(' | AX: %.4X | BX: %.4x | CX: %.4x | DX: %.4x | SI: %.4x | DI: %.4x',
-    [Registers.AX, Registers.BX, Registers.CX, Registers.DX, Registers.SI, Registers.DI]));
+  Write(Format('%-10s | AX:%.4x | BX:%.4x | CX:%.4x | DX:%.4x | SI:%.4x | DI:%.4x',
+    [Buf, Registers.AX, Registers.BX, Registers.CX, Registers.DX, Registers.SI, Registers.DI]));
 
   Writeln;
 end;
