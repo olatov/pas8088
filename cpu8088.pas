@@ -2086,7 +2086,7 @@ begin
   Old := Registers.GetByIndex8(ModRM.Reg);
   Change := ReadRM8(ModRM);
   Result := Old - Change;
-  WriteRM8(ModRM, Byte(Result));
+  Registers.SetByIndex8(ModRM.Reg, Result);
   Registers.Flags.UpdateAfterSub8(Old, Change, Result);
 end;
 
@@ -2100,7 +2100,7 @@ begin
   Old := Registers.GetByIndex16(ModRM.Reg);
   Change := ReadRM16(ModRM);
   Result := Old - Change;
-  WriteRM16(ModRM, Word(Result));
+  Registers.SetByIndex16(ModRM.Reg, Result);
   Registers.Flags.UpdateAfterSub16(Old, Change, Result);
 end;
 
