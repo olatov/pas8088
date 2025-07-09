@@ -1887,7 +1887,7 @@ var
   Result: Int32;
 begin
   ModRM := FetchModRM;
-  Old := ReadRM8(ModRM);
+  Old := ReadRM16(ModRM);
   CarryIn := IfThen(Registers.Flags.CF, 1, 0);
   Change := Registers.GetByIndex16(ModRM.Reg);
   Result := Old + Change + CarryIn;
