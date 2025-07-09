@@ -86,8 +86,6 @@ begin
     FreeAndNil(Errors);
   end;
 
-  Cpu.MemoryBus := MemoryBus;
-  Cpu.IOBus := IOBus;
   Cpu.Reset;
 end;
 

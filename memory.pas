@@ -23,18 +23,33 @@ type
 
   { TRamMemoryBlock }
 
-  TRamMemoryBlock = class(TComponent, IMemoryBlock)
+  TRamMemoryBlock = class(TComponent, IMemoryBusDevice, IMemoryBlock)
   private
+    FBaseAddress: TPhysicalAddress;
+    procedure SetBaseAddress(AValue: TPhysicalAddress);
+  protected
     FData: array of Byte;
+    FMemoryBus: IMemoryBus;
   public
+    property BaseAddress: TPhysicalAddress read FBaseAddress write SetBaseAddress;
     function GetSize: UInt32;
     property Size: UInt32 read GetSize;
-    constructor Create(AOwner: TComponent; ASize: UInt32); reintroduce;
+    constructor Create(AOwner: TComponent; ASize: UInt32;
+      ABaseAddress: TPhysicalAddress); reintroduce;
     procedure WriteByte(AOffset: UInt32; AData: Byte); virtual;
     function ReadByte(AOffset: UInt32): Byte; virtual;
     procedure LoadFromStream(AStream: TStream; AOffset, ALength: Integer);
     procedure LoadFromStream(AStream: TStream; AOffset: Integer);
     procedure LoadFromStream(AStream: TStream);
+
+    { Memory bus device API }
+    function GetMemoryBus: IMemoryBus;
+    procedure SetMemoryBus(AValue: IMemoryBus);
+    procedure WriteMemoryByte(AAddress: TPhysicalAddress; AData: Byte); virtual;
+    function ReadMemoryByte(AAddress: TPhysicalAddress): Byte; virtual;
+    property MemoryBus: IMemoryBus read GetMemoryBus write SetMemoryBus;
+    function OnMemoryRead(Sender: IMemoryBusDevice; AAddress: TPhysicalAddress; out AData: Byte): Boolean; virtual;
+    procedure OnMemoryWrite(Sender: IMemoryBusDevice; AAddress: TPhysicalAddress; AData: Byte); virtual;
   end;
 
   { TRomMemoryBlock }
@@ -48,47 +63,46 @@ type
 
   TMemoryBus = class(TComponent, IMemoryBus)
   private
-    type
-      TMemorySlot = record
-        StartAddress, EndAddress: TPhysicalAddress;
-        MemoryBlock: IMemoryBlock;
-      end;
-  private
-    FMemoryMap: specialize TArray<TMemorySlot>;
-    function SegmentToPhysical(ASegment, AOffset: Word): TPhysicalAddress;
-    function FindMemorySlot(AAddress: TPhysicalAddress): TMemorySlot;
+    FDevices: specialize TArray<IMemoryBusDevice>;
   public
-    procedure WriteByte(AAddress: TPhysicalAddress; AData: Byte);
-    function ReadByte(AAddress: TPhysicalAddress): Byte;
-    procedure WriteByte(ASegment, AOffset: Word; AData: Byte);
-    function ReadByte(ASegment, AOffset: Word): Byte;
-    procedure InstallMemoryBlock(
-        AAddress: TPhysicalAddress; AMemoryBlock: IMemoryBlock);
+    procedure AttachDevice(ADevice: IMemoryBusDevice);
+    procedure InvokeWrite(ADevice: IMemoryBusDevice; AAddress: TPhysicalAddress; AData: Byte);
+    procedure InvokeRead(ADevice: IMemoryBusDevice; AAddress: TPhysicalAddress; out AData: Byte);
   end;
 
 implementation
 
 { TRamMemoryBlock }
 
-constructor TRamMemoryBlock.Create(AOwner: TComponent; ASize: UInt32);
+constructor TRamMemoryBlock.Create(AOwner: TComponent; ASize: UInt32;
+  ABaseAddress: TPhysicalAddress);
 begin
   inherited Create(AOwner);
   SetLength(FData, ASize);
-end;
-
-function TRamMemoryBlock.GetSize: UInt32;
-begin
-  Result := Length(FData);
+  BaseAddress := ABaseAddress;
 end;
 
 procedure TRamMemoryBlock.WriteByte(AOffset: UInt32; AData: Byte);
 begin
+  if AOffset > High(FData) then Exit;
   FData[AOffset] := AData;
 end;
 
 function TRamMemoryBlock.ReadByte(AOffset: UInt32): Byte;
 begin
+  if AOffset > High(FData) then Exit;
   Result := FData[AOffset];
+end;
+
+procedure TRamMemoryBlock.SetBaseAddress(AValue: TPhysicalAddress);
+begin
+  if FBaseAddress = AValue then Exit;
+  FBaseAddress := AValue;
+end;
+
+function TRamMemoryBlock.GetSize: UInt32;
+begin
+  Result := Length(FData);
 end;
 
 procedure TRamMemoryBlock.LoadFromStream(AStream: TStream; AOffset,
@@ -113,81 +127,79 @@ begin
   LoadFromStream(AStream, 0, AStream.Size - AStream.Position);
 end;
 
+function TRamMemoryBlock.GetMemoryBus: IMemoryBus;
+begin
+  Result := FMemoryBus;
+end;
+
+procedure TRamMemoryBlock.SetMemoryBus(AValue: IMemoryBus);
+begin
+  FMemoryBus := AValue;
+end;
+
+procedure TRamMemoryBlock.WriteMemoryByte(
+  AAddress: TPhysicalAddress; AData: Byte);
+begin
+  { Mem blocks do not actively write }
+end;
+
+function TRamMemoryBlock.ReadMemoryByte(AAddress: TPhysicalAddress): Byte;
+begin
+  { Mem blocks do not actively read }
+  Result := 0;
+end;
+
+function TRamMemoryBlock.OnMemoryRead(Sender: IMemoryBusDevice;
+  AAddress: TPhysicalAddress; out AData: Byte): Boolean;
+begin
+  if InRange(AAddress, BaseAddress, BaseAddress + Size - 1) then
+  begin
+    AData := ReadByte(AAddress - BaseAddress);
+    Result := True;
+  end else
+    Result := False;
+end;
+
+procedure TRamMemoryBlock.OnMemoryWrite(Sender: IMemoryBusDevice;
+  AAddress: TPhysicalAddress; AData: Byte);
+begin
+  if InRange(AAddress, BaseAddress, BaseAddress + Size - 1) then
+    WriteByte(AAddress - BaseAddress, AData);
+end;
+
 { TRomMemoryBlock }
 
 procedure TRomMemoryBlock.WriteByte(AOffset: UInt32; AData: Byte);
 begin
-  { Nothing happens - writes to ROM are ignored }
+  { Writing to rom does nothing }
 end;
 
 { TMemoryBus }
 
-function TMemoryBus.SegmentToPhysical(ASegment, AOffset: Word
-  ): TPhysicalAddress;
+procedure TMemoryBus.AttachDevice(ADevice: IMemoryBusDevice);
 begin
-  {$Push}{$R-}
-  Result := (ASegment shl 4) + AOffset;
-  {$Pop}
+  Insert(ADevice, FDevices, Integer.MaxValue);
+  ADevice.MemoryBus := Self;
 end;
 
-function TMemoryBus.FindMemorySlot(AAddress: TPhysicalAddress): TMemorySlot;
+procedure TMemoryBus.InvokeWrite(
+  ADevice: IMemoryBusDevice; AAddress: TPhysicalAddress; AData: Byte);
 var
-  Slot: TMemorySlot;
+  Device: IMemoryBusDevice;
 begin
-  Result.MemoryBlock := Nil;
-  for Slot in FMemoryMap do
-    if InRange(AAddress, Slot.StartAddress, Slot.EndAddress) then
-      Exit(Slot);
+  for Device in FDevices do
+    if (Device <> ADevice) then Device.OnMemoryWrite(ADevice, AAddress, AData);
 end;
 
-procedure TMemoryBus.WriteByte(AAddress: TPhysicalAddress; AData: Byte);
+procedure TMemoryBus.InvokeRead(
+  ADevice: IMemoryBusDevice; AAddress: TPhysicalAddress; out AData: Byte);
 var
-  Slot: TMemorySlot;
+  Device: IMemoryBusDevice;
 begin
-  Slot := FindMemorySlot(AAddress);
-  if not Assigned(Slot.MemoryBlock) then Exit;
-
-  Slot.MemoryBlock.WriteByte(AAddress - Slot.StartAddress, AData);
-end;
-
-function TMemoryBus.ReadByte(AAddress: TPhysicalAddress): Byte;
-var
-  Slot: TMemorySlot;
-begin
-  Slot := FindMemorySlot(AAddress);
-  if not Assigned(Slot.MemoryBlock) then Exit($FF);
-
-  Result := Slot.MemoryBlock.ReadByte(AAddress - Slot.StartAddress);
-end;
-
-procedure TMemoryBus.WriteByte(ASegment, AOffset: Word; AData: Byte);
-begin
-  WriteByte(SegmentToPhysical(ASegment, AOffset), AData);
-end;
-
-function TMemoryBus.ReadByte(ASegment, AOffset: Word): Byte;
-begin
-  Result := ReadByte(SegmentToPhysical(ASegment, AOffset));
-end;
-
-procedure TMemoryBus.InstallMemoryBlock(AAddress: TPhysicalAddress;
-  AMemoryBlock: IMemoryBlock);
-var
-  Slot, OtherSlot: TMemorySlot;
-begin
-  Slot.StartAddress := AAddress;
-  Slot.EndAddress := AAddress + AMemoryBlock.Size - 1;
-  Slot.MemoryBlock := AMemoryBlock;
-
-  if Slot.EndAddress > High(TPhysicalAddress) then
-    Exception.Create('Memory block exceeds the address space');
-
-  for OtherSlot in FMemoryMap do
-    if (Slot.EndAddress >= OtherSlot.StartAddress)
-        and (OtherSlot.EndAddress >= Slot.StartAddress) then
-      Exception.Create('Memory block overlaps with an existing block');
-
-  Insert(Slot, FMemoryMap, Integer.MaxValue);
+  for Device in FDevices do
+    if (Device <> ADevice)
+        and Device.OnMemoryRead(ADevice, AAddress, AData) then Exit;
+  AData := $FF;
 end;
 
 end.

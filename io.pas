@@ -13,24 +13,41 @@ type
   { TIOBus }
 
   TIOBus = class(TComponent, IIOBus)
+  private
+    FDevices: specialize TArray<IIOBusDevice>;
   public
-    procedure WriteByte(AAddress: Word; AData: Byte);
-    function ReadByte(AAddress: Word): Byte;
+    procedure AttachDevice(ADevice: IIOBusDevice);
+    procedure InvokeWrite(ADevice: IIOBusDevice; AAddress: Word; AData: Byte);
+    procedure InvokeRead(ADevice: IIOBusDevice; AAddress: Word; out AData: Byte);
   end;
 
 implementation
 
 { TIOBus }
 
-procedure TIOBus.WriteByte(AAddress: Word; AData: Byte);
+procedure TIOBus.AttachDevice(ADevice: IIOBusDevice);
 begin
-  //Writeln(Format('IO: write 0x%.2x -> port 0x%x', [AData, AAddress]));
+  Insert(ADevice, FDevices, Integer.MaxValue);
+  ADevice.IOBus := Self;
 end;
 
-function TIOBus.ReadByte(AAddress: Word): Byte;
+procedure TIOBus.InvokeWrite(ADevice: IIOBusDevice; AAddress: Word; AData: Byte);
+var
+  Device: IIOBusDevice;
 begin
-  Result := $FF;
-  //Writeln(Format('IO: read 0x%.2x <- port 0x%x ', [Result, AAddress]));
+  for Device in FDevices do
+    if (Device <> ADevice) then
+      Device.OnIOWrite(ADevice, AAddress, AData);
+end;
+
+procedure TIOBus.InvokeRead(ADevice: IIOBusDevice; AAddress: Word; out AData: Byte);
+var
+  Device: IIOBusDevice;
+begin
+  for Device in FDevices do
+    if (Device <> ADevice)
+        and Device.OnIORead(ADevice, AAddress, AData) then Exit;
+  AData := $FF;
 end;
 
 end.
