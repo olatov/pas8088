@@ -1712,8 +1712,17 @@ begin
   if Assigned(InterruptHook) and InterruptHook(Self, ANumber) then Exit;
 
   Push(Registers.Flags.GetWord, Registers.SS);
-  Push(Registers.CS, Registers.SS);
-  Push(Registers.IP, Registers.SS);
+
+  if not FCurrentInstruction.Repeating then
+  begin
+    Push(Registers.CS, Registers.SS);
+    Push(Registers.IP, Registers.SS);
+  end else
+  begin
+    Push(FCurrentInstruction.CS, Registers.SS);
+    Push(FCurrentInstruction.IP, Registers.SS);
+  end;
+
   Registers.Flags.IF_ := False;
   Registers.Flags.TF := False;
 
