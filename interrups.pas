@@ -81,7 +81,8 @@ end;
 procedure TNmiGate.OnIOWrite(Sender: IIOBusDevice; AAddress: Word; AData: Byte);
 begin
   if AAddress = $68 then
-    FOutputEnabled := (AData and (1 shl 3)) = 0;
+    { TODO: double check }
+    FOutputEnabled := (AData and (1 shl 3)) <> 0;
 end;
 
 end.

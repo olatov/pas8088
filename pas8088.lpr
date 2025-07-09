@@ -12,7 +12,7 @@ uses
 
 const
   FPS = 50;
-  Cycles = 15000;
+  Cycles = 20000;
 
 type
 
@@ -34,9 +34,7 @@ var
   BiosRom: TRomMemoryBlock;
   BiosStream: TStream;
   Ram, VideoRam: TRamMemoryBlock;
-  TestProgram: TBytesStream;
   NmiGate: TNmiGate;
-  Tst: TRamMemoryBlock;
 begin
   Result := TMachine.Create(Nil);
 
@@ -73,9 +71,6 @@ begin
   finally
     FreeAndNil(BiosStream);
   end;
-
-  //Tst := TRamMemoryBlock.Create(Result, 64*1024, $80000);
-  //Result.InstallMemory(Tst);
 end;
 
 procedure TApp.Run;
@@ -84,7 +79,7 @@ var
   I: Integer;
 
 begin
-  SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+  //SetConfigFlags(FLAG_WINDOW_RESIZABLE);
   InitWindow(800, 600, 'Poisk');
   SetTargetFPS(FPS);
 
@@ -98,6 +93,8 @@ begin
 
   while not WindowShouldClose do
   begin
+    if IsKeyPressed(KEY_F) then ToggleBorderlessWindowed;
+
     try
       I := 0;
       while I < Speed do
@@ -125,7 +122,7 @@ begin
       DrawTexturePro(
         Target.texture,
         RectangleCreate(0, 0, 640, -400),
-        RectangleCreate(0, 0, GetScreenWidth, GetScreenHeight),
+        RectangleCreate(0, 0, GetScreenHeight * 1.333, GetScreenHeight),
         Vector2Zero, 0, WHITE);
     EndDrawing;
   end;
@@ -172,7 +169,7 @@ var
   TestProgram: TBytesStream;
   I: Integer;
 begin
-  Writeln(Format('INT %.x', [ANumber]));
+  //Writeln(Format('INT %.x', [ANumber]));
   case ANumber of
     $10:
       begin
@@ -186,6 +183,7 @@ begin
       end;
     $19:
       begin
+        {
         TestProgram := TBytesStream.Create;
         TestProgram.LoadFromFile('test.bin');
         for I := 0 To TestProgram.Size - 1 do
@@ -195,8 +193,9 @@ begin
 
         Cpu.Registers.CS := $1000;
         Cpu.Registers.IP := $0000;
-        Speed := 1;
+        //Speed := 1;
         Result := True;
+        }
       end;
   end;
   Result := False;
