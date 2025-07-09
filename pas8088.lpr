@@ -6,8 +6,8 @@ uses
   {$IFDEF UNIX}
   //cthreads,
   {$ENDIF}
-  Classes, SysUtils,
-  Cpu8088, Memory, IO, Machine;
+  Classes, SysUtils, StrUtils,
+  Cpu8088, Memory, IO, Machine, IConvEnc;
 
 type
 
@@ -81,7 +81,7 @@ begin
 
   try
     while not (Computer.Cpu.Halted
-        or (Computer.Cpu.Ticks > 50000000)) do
+        or (Computer.Cpu.Ticks > 1000)) do
       Computer.Tick;
   except
     on E: Exception do
@@ -93,6 +93,7 @@ begin
 
   Writeln;
   Computer.Cpu.Registers.Log;
+  Writeln;
 
   FreeAndNil(Computer);
 end;
@@ -100,17 +101,17 @@ end;
 function TApp.InterruptHook(ASender: TObject; ANumber: Byte): Boolean;
 var
   Cpu: TCpu8088 absolute ASender;
+  Message: String = '';
 begin
-  Writeln(Format('INT 0x%.x', [ANumber]));
-
   case ANumber of
     $10:
       begin
         case Cpu.Registers.AH of
           $0E: { teletype }
-            Write(Char(Cpu.Registers.AL));
-        else
-          Writeln(Format('BIOS function 0x%.x', [Cpu.Registers.AH]));
+            begin
+              Iconvert(Char(Cpu.Registers.AL), Message, 'CP866', 'utf-8');
+              Write(Message);
+            end;
         end;
       end;
   end;
