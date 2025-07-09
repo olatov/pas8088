@@ -82,6 +82,11 @@
     <RunParams>
       <FormatVersion Value="2"/>
     </RunParams>
+    <RequiredPackages>
+      <Item>
+        <PackageName Value="ray4laz"/>
+      </Item>
+    </RequiredPackages>
     <Units>
       <Unit>
         <Filename Value="pas8088.lpr"/>
@@ -106,6 +111,11 @@
         <Filename Value="machine.pas"/>
         <IsPartOfProject Value="True"/>
         <UnitName Value="Machine"/>
+      </Unit>
+      <Unit>
+        <Filename Value="videocontroller.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="VideoController"/>
       </Unit>
     </Units>
   </ProjectOptions>

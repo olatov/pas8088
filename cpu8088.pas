@@ -21,10 +21,35 @@ type
     function ReadByte(ASegment, AOffset: Word): Byte;
   end;
 
+  IIOBus = interface;
+  IIODevice = interface;
+
+  TIOReadNotifyEvent = function(Sender: IIODevice; AAddress: Word; out AData: Byte): Boolean of object;
+  TIOWriteNotifyEvent = procedure(Sender: IIODevice; AAddress: Word; AData: Byte) of object;
+
+  { IIODevice }
+
+  IIODevice = interface
+    ['{273E3676-D428-452A-84CA-3EADAC0AC885}']
+    function GetIOBus: IIOBus;
+    function GetOnIORead: TIOReadNotifyEvent;
+    function GetOnIOWrite: TIOWriteNotifyEvent;
+    procedure SetIOBus(AValue: IIOBus);
+    procedure SetOnIORead(AValue: TIOReadNotifyEvent);
+    procedure SetOnIOWrite(AValue: TIOWriteNotifyEvent);
+    procedure WriteIOByte(AAddress: Word; AData: Byte);
+    function ReadIOByte(AAddress: Word): Byte;
+
+    property IOBus: IIOBus read GetIOBus write SetIOBus;
+    property OnIORead: TIOReadNotifyEvent read GetOnIORead write SetOnIORead;
+    property OnIOWrite: TIOWriteNotifyEvent read GetOnIOWrite write SetOnIOWrite;
+  end;
+
   IIOBus = interface
     ['{364D996D-C306-4750-A24A-E1E84CBB0110}']
-    procedure WriteByte(AAddress: Word; AData: Byte);
-    function ReadByte(AAddress: Word): Byte;
+    procedure AttachDevice(ADevice: IIODevice);
+    procedure InvokeWrite(ADevice: IIODevice; AAddress: Word; AData: Byte);
+    procedure InvokeRead(ADevice: IIODevice; AAddress: Word; out AData: Byte);
   end;
 
   TInstruction = record
@@ -205,7 +230,7 @@ type
 
   { TCpu8088 }
 
-  TCpu8088 = class(TComponent)
+  TCpu8088 = class(TComponent, IIODevice)
   private
     type
       TModRM = bitpacked record
@@ -235,6 +260,8 @@ type
       Number: Byte;
     end;
     FCurrentInstruction: TInstruction;
+    FOnIORead: TIOReadNotifyEvent;
+    FOnIOWrite: TIOWriteNotifyEvent;
 
     function CodeSegment: Word;
     procedure SetInterruptHook(AValue: TInteruptHook);
@@ -257,7 +284,6 @@ type
     procedure WriteRM16(AModRM: TModRM; AValue: Word);
     procedure FillEffectiveAddress(var AModRM: TModRM);
 
-    procedure SetIOBus(AValue: IIOBus);
     procedure SetMemoryBus(AValue: IMemoryBus);
 
     procedure Push(AValue: Word);
@@ -466,7 +492,6 @@ type
     property Halted: Boolean read FHalted;
     property Registers: TRegisters read FRegisters write FRegisters;
     property MemoryBus: IMemoryBus read FMemoryBus write SetMemoryBus;
-    property IOBus: IIOBus read FIOBus write SetIOBus;
     property OnBeforeInstruction: TNotifyEvent read FOnBeforeInstruction write SetOnBeforeInstruction;
     property OnAfterInstruction: TInstructionNotifyEvent read FOnAfterInstruction write SetOnAfterInstruction;
     property InterruptHook: TInteruptHook read FInterruptHook write SetInterruptHook;
@@ -474,6 +499,18 @@ type
     procedure Reset;
     procedure Tick;
     procedure FetchInstruction;
+
+    function GetIOBus: IIOBus;
+    function GetOnIORead: TIOReadNotifyEvent;
+    function GetOnIOWrite: TIOWriteNotifyEvent;
+    procedure SetIOBus(AValue: IIOBus);
+    procedure SetOnIORead(AValue: TIOReadNotifyEvent);
+    procedure SetOnIOWrite(AValue: TIOWriteNotifyEvent);
+    procedure WriteIOByte(AAddress: Word; AData: Byte);
+    function ReadIOByte(AAddress: Word): Byte;
+    property IOBus: IIOBus read GetIOBus write SetIOBus;
+    property OnIORead: TIOReadNotifyEvent read GetOnIORead write SetOnIORead;
+    property OnIOWrite: TIOWriteNotifyEvent read GetOnIOWrite write SetOnIOWrite;
   end;
 
 implementation
@@ -1427,6 +1464,26 @@ procedure TCpu8088.SetIOBus(AValue: IIOBus);
 begin
   if FIOBus = AValue then Exit;
   FIOBus := AValue;
+end;
+
+procedure TCpu8088.SetOnIORead(AValue: TIOReadNotifyEvent);
+begin
+
+end;
+
+procedure TCpu8088.SetOnIOWrite(AValue: TIOWriteNotifyEvent);
+begin
+
+end;
+
+procedure TCpu8088.WriteIOByte(AAddress: Word; AData: Byte);
+begin
+
+end;
+
+function TCpu8088.ReadIOByte(AAddress: Word): Byte;
+begin
+
 end;
 
 procedure TCpu8088.SetMemoryBus(AValue: IMemoryBus);
@@ -2492,24 +2549,24 @@ end;
 
 procedure TCpu8088.HandleInALDX;
 begin
-  Registers.AL := IOBus.ReadByte(Registers.DX);
+  Registers.AL := ReadIOByte(Registers.DX);
 end;
 
 procedure TCpu8088.HandleInAXDX;
 begin
-  Registers.AL := IOBus.ReadByte(Registers.DX);
-  Registers.AH := IOBus.ReadByte(Registers.DX + 1);
+  Registers.AL := ReadIOByte(Registers.DX);
+  Registers.AH := ReadIOByte(Registers.DX + 1);
 end;
 
 procedure TCpu8088.HandleOutDXAL;
 begin
-  IOBus.WriteByte(Registers.DX, Registers.AL);
+  WriteIOByte(Registers.DX, Registers.AL);
 end;
 
 procedure TCpu8088.HandleOutDXAX;
 begin
-  IOBus.WriteByte(Registers.DX, Registers.AL);
-  IOBus.WriteByte(Registers.DX + 1, Registers.AH);
+  WriteIOByte(Registers.DX, Registers.AL);
+  WriteIOByte(Registers.DX + 1, Registers.AH);
 end;
 
 procedure TCpu8088.HandleInt1;
@@ -2745,7 +2802,7 @@ end;
 
 procedure TCpu8088.HandleInALImm8;
 begin
-  Registers.AL := IOBus.ReadByte(FetchCodeByte);
+  Registers.AL := ReadIOByte(FetchCodeByte);
 end;
 
 procedure TCpu8088.HandleInAXImm8;
@@ -2753,8 +2810,8 @@ var
   Address: Byte;
 begin
   Address := FetchCodeByte;
-  Registers.AL := IOBus.ReadByte(Address);
-  Registers.AH := IOBus.ReadByte(Address + 1);
+  Registers.AL := ReadIOByte(Address);
+  Registers.AH := ReadIOByte(Address + 1);
 end;
 
 procedure TCpu8088.HandleOutImm8AL;
@@ -2762,7 +2819,7 @@ var
   Address: Byte;
 begin
   Address := FetchCodeByte;
-  IOBus.WriteByte(Address, Registers.AL);
+  WriteIOByte(Address, Registers.AL);
 end;
 
 procedure TCpu8088.HandleOutImm8AX;
@@ -2770,8 +2827,8 @@ var
   Address: Byte;
 begin
   Address := FetchCodeByte;
-  IOBus.WriteByte(Address, Registers.AL);
-  IOBus.WriteByte(Address + 1, Registers.AH);
+  WriteIOByte(Address, Registers.AL);
+  WriteIOByte(Address + 1, Registers.AH);
 end;
 
 procedure TCpu8088.HandleCallNear;
@@ -3324,6 +3381,21 @@ begin
     end;
   until False;
   FCurrentInstruction.Repeating := FCurrentInstruction.Repetition <> repNone;
+end;
+
+function TCpu8088.GetIOBus: IIOBus;
+begin
+  Result := FIOBus;
+end;
+
+function TCpu8088.GetOnIORead: TIOReadNotifyEvent;
+begin
+
+end;
+
+function TCpu8088.GetOnIOWrite: TIOWriteNotifyEvent;
+begin
+
 end;
 
 end.

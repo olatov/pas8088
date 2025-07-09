@@ -6,8 +6,9 @@ uses
   {$IFDEF UNIX}
   //cthreads,
   {$ENDIF}
-  Classes, SysUtils, StrUtils,
-  Cpu8088, Memory, IO, Machine, IConvEnc;
+  Classes, SysUtils, StrUtils, Math,
+  Cpu8088, Memory, IO, Machine, IConvEnc,
+  RayLib, RayMath;
 
 type
 
@@ -15,6 +16,7 @@ type
 
   TApp = class
   public
+    Target: TRenderTexture;
     procedure Run;
     function BuildMachine: TMachine;
     function InterruptHook(ASender: TObject; ANumber: Byte): Boolean;
@@ -26,35 +28,52 @@ var
   MemoryBus: TMemoryBus;
   BiosRom: TRomMemoryBlock;
   BiosStream: TStream;
-  Ram: TRamMemoryBlock;
+  Ram, VideoRam: TRamMemoryBlock;
   TestProgramStream: TStream;
+  TmpData: TBytesStream;
+  IOBus: TIOBus;
+  Cpu: TCpu8088;
 begin
   Result := TMachine.Create(Nil);
 
-  { Cpu }
-  Result.InstallCpu(TCpu8088.Create(Result));
-
   { I/O }
-  Result.InstallIOBus(TIOBus.Create(Result));
+  IOBus := TIOBus.Create(Result);
+  Result.InstallIOBus(IOBus);
 
-  { BIOS ROM }
+  { RAM / ROM }
   MemoryBus := TMemoryBus.Create(Result);
 
-  BiosRom := TRomMemoryBlock.Create(MemoryBus, 8 * 1024);
+  Ram := TRamMemoryBlock.Create(MemoryBus, 1024 * 128);
+  MemoryBus.InstallMemoryBlock($00000, Ram);
+
+  BiosRom := TRomMemoryBlock.Create(MemoryBus, 1024 * 8);
+  MemoryBus.InstallMemoryBlock($FE000, BiosRom);
+
+  { Video }
+  VideoRam := TRamMemoryBlock.Create(MemoryBus, 1024 * 32);
+  MemoryBus.InstallMemoryBlock($B8000, VideoRam);
+
+  Result.InstallMemoryBus(MemoryBus);
+
+  { Cpu }
+  Cpu := TCpu8088.Create(Result);
+  Result.InstallCpu(Cpu);
+  IOBus.AttachDevice(Cpu);
+
+  Result.Initialize;
 
   BiosStream := TBytesStream.Create([
     $EA, $00, $00, $60, $00   { jmp 0x0060:0x0000 }
   ]);
+  TBytesStream(BiosStream).LoadFromFile('poisk_1991.bin');
 
   try
-    BiosRom.LoadFromStream(BiosStream, $2000 - $10);
+    BiosRom.LoadFromStream(BiosStream, ($2000 - $10) * 0);
   finally
     FreeAndNil(BiosStream);
   end;
-  MemoryBus.InstallMemoryBlock($FE000, BiosRom);
 
-  { RAM, test program }
-  Ram := TRamMemoryBlock.Create(MemoryBus, 128 * 1024);
+  { Test program }
   TestProgramStream := TFileStream.Create('test.bin', fmOpenRead);
   try
     Ram.LoadFromStream(TestProgramStream, $00600);
@@ -62,11 +81,11 @@ begin
     FreeAndNil(TestProgramStream);
   end;
 
-  MemoryBus.InstallMemoryBlock($00000, Ram);
-
-  Result.InstallMemoryBus(MemoryBus);
-
-  Result.Initialize;
+  TmpData := TBytesStream.Create;
+  TmpData.LoadFromFile('CIRC.BIN');
+  TmpData.Position := 7;
+  VideoRam.LoadFromStream(TmpData);
+  TmpData.Free;
 end;
 
 procedure TApp.Run;
@@ -74,22 +93,49 @@ var
   Computer: TMachine;
 
 begin
+  SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+  InitWindow(800, 600, 'TEST');
+  SetTargetFPS(50);
+
+  Target := LoadRenderTexture(640, 400);
+
   Computer := BuildMachine;
 
   Computer.Cpu.InterruptHook := @InterruptHook;
   Computer.Cpu.OnAfterInstruction := @OnInstruction;
 
-  try
-    while not (Computer.Cpu.Halted
-        or (Computer.Cpu.Ticks > 1000)) do
-      Computer.Tick;
-  except
-    on E: Exception do
-    begin
-      Writeln('*** ERROR: ', E.Message, ' ***');
-      Computer.Cpu.DumpCurrentInstruction;
+  while not WindowShouldClose do
+  begin
+    try
+      Computer.Run(10000);
+    except
+      on E: Exception do
+        begin
+          Writeln('*** ERROR: ', E.Message, ' ***');
+          Computer.Cpu.DumpCurrentInstruction;
+          break;
+        end;
     end;
+
+    BeginTextureMode(Target);
+      ClearBackground(BLANK);
+
+      { Todo: Render display }
+
+    EndTextureMode;
+
+    BeginDrawing;
+      DrawTexturePro(
+        Target.texture,
+        RectangleCreate(0, 0, 640, -400),
+        RectangleCreate(0, 0, GetScreenWidth, GetScreenHeight),
+        Vector2Zero, 0, WHITE);
+    EndDrawing;
   end;
+
+  UnloadRenderTexture(Target);
+
+  CloseWindow;
 
   Writeln;
   Computer.Cpu.Registers.Log;
@@ -120,13 +166,15 @@ end;
 
 procedure TApp.OnInstruction(ASender: TObject; AInstruction: TInstruction);
 begin
-  (ASender as TCpu8088).DumpCurrentInstruction;
+  //(ASender as TCpu8088).DumpCurrentInstruction;
 end;
 
 var
   App: TApp;
 
 begin
+  SetExceptionMask(GetExceptionMask + [exInvalidOp, exOverflow, exZeroDivide]);
+
   App := TApp.Create;
   App.Run;
   App.Free;
