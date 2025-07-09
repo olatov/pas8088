@@ -30,7 +30,6 @@ var
   BiosStream: TStream;
   Ram, VideoRam: TRamMemoryBlock;
   TestProgramStream: TStream;
-  TmpData: TBytesStream;
   IOBus: TIOBus;
   Cpu: TCpu8088;
 begin
@@ -43,15 +42,15 @@ begin
   { RAM / ROM }
   MemoryBus := TMemoryBus.Create(Result);
 
-  Ram := TRamMemoryBlock.Create(MemoryBus, 1024 * 128);
-  MemoryBus.InstallMemoryBlock($00000, Ram);
+  Ram := TRamMemoryBlock.Create(MemoryBus, 1024 * 128, $0);
+  MemoryBus.AttachDevice(Ram);
 
-  BiosRom := TRomMemoryBlock.Create(MemoryBus, 1024 * 8);
-  MemoryBus.InstallMemoryBlock($FE000, BiosRom);
+  BiosRom := TRomMemoryBlock.Create(MemoryBus, 1024 * 8, $FE000);
+  MemoryBus.AttachDevice(BiosRom);
 
   { Video }
-  VideoRam := TRamMemoryBlock.Create(MemoryBus, 1024 * 32);
-  MemoryBus.InstallMemoryBlock($B8000, VideoRam);
+  VideoRam := TRamMemoryBlock.Create(MemoryBus, 1024 * 32, $BF000);
+  MemoryBus.AttachDevice(VideoRam);
 
   Result.InstallMemoryBus(MemoryBus);
 
@@ -66,10 +65,9 @@ begin
   BiosStream := TBytesStream.Create([
     $EA, $00, $00, $60, $00   { jmp 0x0060:0x0000 }
   ]);
-  TBytesStream(BiosStream).LoadFromFile('poisk_1991.bin');
 
   try
-    BiosRom.LoadFromStream(BiosStream, ($2000 - $10) * 0);
+    BiosRom.LoadFromStream(BiosStream, $2000 - $10);
   finally
     FreeAndNil(BiosStream);
   end;
@@ -81,12 +79,6 @@ begin
   finally
     FreeAndNil(TestProgramStream);
   end;
-
-  TmpData := TBytesStream.Create;
-  TmpData.LoadFromFile('CIRC.BIN');
-  TmpData.Position := 7;
-  VideoRam.LoadFromStream(TmpData);
-  TmpData.Free;
 end;
 
 procedure TApp.Run;
@@ -156,7 +148,7 @@ begin
         case Cpu.Registers.AH of
           $0E: { teletype }
             begin
-              Iconvert(Char(Cpu.Registers.AL), Message, 'CP866', 'utf-8');
+              Iconvert(Char(Cpu.Registers.AL), Message, 'cp866', 'utf-8');
               Write(Message);
             end;
         end;

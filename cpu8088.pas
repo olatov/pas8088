@@ -16,10 +16,12 @@ type
   IMemoryBusDevice = interface;
   IMemoryBus = interface;
 
+  {
   TMemoryReadNotifyEvent = function(
     Sender: IMemoryBusDevice; AAddress: TPhysicalAddress; out AData: Byte): Boolean of object;
   TMemoryWriteNotifyEvent = procedure(
     Sender: IMemoryBusDevice; AAddress: TPhysicalAddress; AData: Byte) of object;
+  }
 
   IMemoryBus = interface
     ['{8A9E54C3-119D-417B-AC06-1B59AF018B4E}']
@@ -33,16 +35,12 @@ type
   IMemoryBusDevice = interface
     ['{330D62BD-4E8F-4C7F-BC64-ACC7BAD5146E}']
     function GetMemoryBus: IMemoryBus;
-    function GetOnMemoryRead: TMemoryReadNotifyEvent;
-    function GetOnMemoryWrite: TMemoryWriteNotifyEvent;
     procedure SetMemoryBus(AValue: IMemoryBus);
-    procedure SetOnMemoryRead(AValue: TMemoryReadNotifyEvent);
-    procedure SetOnMemoryWrite(AValue: TMemoryWriteNotifyEvent);
     procedure WriteMemoryByte(AAddress: TPhysicalAddress; AData: Byte);
     function ReadMemoryByte(AAddress: TPhysicalAddress): Byte;
     property MemoryBus: IMemoryBus read GetMemoryBus write SetMemoryBus;
-    property OnMemoryRead: TMemoryReadNotifyEvent read GetOnMemoryRead write SetOnMemoryRead;
-    property OnMemoryWrite: TMemoryWriteNotifyEvent read GetOnMemoryWrite write SetOnMemoryWrite;
+    function OnMemoryRead(Sender: IMemoryBusDevice; AAddress: TPhysicalAddress; out AData: Byte): Boolean;
+    procedure OnMemoryWrite(Sender: IMemoryBusDevice; AAddress: TPhysicalAddress; AData: Byte);
   end;
 
   IIOBus = interface;
@@ -290,8 +288,6 @@ type
 
     FOnIORead: TIOReadNotifyEvent;
     FOnIOWrite: TIOWriteNotifyEvent;
-    FOnMemoryRead: TMemoryReadNotifyEvent;
-    FOnMemoryWrite: TMemoryWriteNotifyEvent;
 
     function CodeSegment: Word;
     procedure SetInterruptHook(AValue: TInteruptHook);
@@ -542,16 +538,12 @@ type
 
     { Memory bus device API }
     function GetMemoryBus: IMemoryBus;
-    function GetOnMemoryRead: TMemoryReadNotifyEvent;
-    function GetOnMemoryWrite: TMemoryWriteNotifyEvent;
     procedure SetMemoryBus(AValue: IMemoryBus);
-    procedure SetOnMemoryRead(AValue: TMemoryReadNotifyEvent);
-    procedure SetOnMemoryWrite(AValue: TMemoryWriteNotifyEvent);
     procedure WriteMemoryByte(AAddress: TPhysicalAddress; AData: Byte);
     function ReadMemoryByte(AAddress: TPhysicalAddress): Byte;
     property MemoryBus: IMemoryBus read GetMemoryBus write SetMemoryBus;
-    property OnMemoryRead: TMemoryReadNotifyEvent read GetOnMemoryRead write SetOnMemoryRead;
-    property OnMemoryWrite: TMemoryWriteNotifyEvent read GetOnMemoryWrite write SetOnMemoryWrite;
+    function OnMemoryRead(Sender: IMemoryBusDevice; AAddress: TPhysicalAddress; out AData: Byte): Boolean;
+    procedure OnMemoryWrite(Sender: IMemoryBusDevice; AAddress: TPhysicalAddress; AData: Byte);
   end;
 
 implementation
@@ -1520,30 +1512,10 @@ begin
   Result := FMemoryBus;
 end;
 
-function TCpu8088.GetOnMemoryRead: TMemoryReadNotifyEvent;
-begin
-
-end;
-
-function TCpu8088.GetOnMemoryWrite: TMemoryWriteNotifyEvent;
-begin
-
-end;
-
 procedure TCpu8088.SetMemoryBus(AValue: IMemoryBus);
 begin
   if FMemoryBus = AValue then Exit;
   FMemoryBus := AValue;
-end;
-
-procedure TCpu8088.SetOnMemoryRead(AValue: TMemoryReadNotifyEvent);
-begin
-  FOnMemoryRead := AValue;
-end;
-
-procedure TCpu8088.SetOnMemoryWrite(AValue: TMemoryWriteNotifyEvent);
-begin
-  FOnMemoryWrite := AValue;
 end;
 
 procedure TCpu8088.WriteMemoryByte(AAddress: TPhysicalAddress; AData: Byte);
@@ -1556,6 +1528,19 @@ function TCpu8088.ReadMemoryByte(AAddress: TPhysicalAddress): Byte;
 begin
   if not Assigned(MemoryBus) then Exit;
   MemoryBus.InvokeRead(Self, AAddress, Result);
+end;
+
+function TCpu8088.OnMemoryRead(Sender: IMemoryBusDevice;
+  AAddress: TPhysicalAddress; out AData: Byte): Boolean;
+begin
+  { Nothing reads from the CPU }
+  Result := False;
+end;
+
+procedure TCpu8088.OnMemoryWrite(Sender: IMemoryBusDevice;
+  AAddress: TPhysicalAddress; AData: Byte);
+begin
+  { Nothin writes to the CPU }
 end;
 
 function TCpu8088.ReadMemoryByte(ASegment, AOffset: Word): Byte;
