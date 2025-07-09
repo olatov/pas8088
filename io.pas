@@ -36,7 +36,7 @@ var
   Device: IIOBusDevice;
 begin
   for Device in FDevices do
-    if (Device <> ADevice) and Assigned(Device.OnIOWrite) then
+    if (Device <> ADevice) then
       Device.OnIOWrite(ADevice, AAddress, AData);
 end;
 
@@ -46,7 +46,6 @@ var
 begin
   for Device in FDevices do
     if (Device <> ADevice)
-        and Assigned(Device.OnIOWrite)
         and Device.OnIORead(ADevice, AAddress, AData) then Exit;
   AData := $FF;
 end;

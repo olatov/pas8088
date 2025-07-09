@@ -16,13 +16,6 @@ type
   IMemoryBusDevice = interface;
   IMemoryBus = interface;
 
-  {
-  TMemoryReadNotifyEvent = function(
-    Sender: IMemoryBusDevice; AAddress: TPhysicalAddress; out AData: Byte): Boolean of object;
-  TMemoryWriteNotifyEvent = procedure(
-    Sender: IMemoryBusDevice; AAddress: TPhysicalAddress; AData: Byte) of object;
-  }
-
   IMemoryBus = interface
     ['{8A9E54C3-119D-417B-AC06-1B59AF018B4E}']
     procedure AttachDevice(ADevice: IMemoryBusDevice);
@@ -46,26 +39,17 @@ type
   IIOBus = interface;
   IIOBusDevice = interface;
 
-  TIOReadNotifyEvent = function(
-    Sender: IIOBusDevice; AAddress: Word; out AData: Byte): Boolean of object;
-  TIOWriteNotifyEvent = procedure(
-    Sender: IIOBusDevice; AAddress: Word; AData: Byte) of object;
-
   { IIOBusDevice }
 
   IIOBusDevice = interface
     ['{273E3676-D428-452A-84CA-3EADAC0AC885}']
     function GetIOBus: IIOBus;
-    function GetOnIORead: TIOReadNotifyEvent;
-    function GetOnIOWrite: TIOWriteNotifyEvent;
     procedure SetIOBus(AValue: IIOBus);
-    procedure SetOnIORead(AValue: TIOReadNotifyEvent);
-    procedure SetOnIOWrite(AValue: TIOWriteNotifyEvent);
     procedure WriteIOByte(AAddress: Word; AData: Byte);
     function ReadIOByte(AAddress: Word): Byte;
     property IOBus: IIOBus read GetIOBus write SetIOBus;
-    property OnIORead: TIOReadNotifyEvent read GetOnIORead write SetOnIORead;
-    property OnIOWrite: TIOWriteNotifyEvent read GetOnIOWrite write SetOnIOWrite;
+    function OnIORead(ADevice: IIOBusDevice; AAddress: Word; out AData: Byte): Boolean;
+    procedure OnIOWrite(Sender: IIOBusDevice; AAddress: Word; AData: Byte);
   end;
 
   IIOBus = interface
@@ -285,9 +269,6 @@ type
       Number: Byte;
     end;
     FCurrentInstruction: TInstruction;
-
-    FOnIORead: TIOReadNotifyEvent;
-    FOnIOWrite: TIOWriteNotifyEvent;
 
     function CodeSegment: Word;
     procedure SetInterruptHook(AValue: TInteruptHook);
@@ -525,16 +506,12 @@ type
 
     { IO bus device API }
     function GetIOBus: IIOBus;
-    function GetOnIORead: TIOReadNotifyEvent;
-    function GetOnIOWrite: TIOWriteNotifyEvent;
     procedure SetIOBus(AValue: IIOBus);
-    procedure SetOnIORead(AValue: TIOReadNotifyEvent);
-    procedure SetOnIOWrite(AValue: TIOWriteNotifyEvent);
     procedure WriteIOByte(AAddress: Word; AData: Byte);
     function ReadIOByte(AAddress: Word): Byte;
     property IOBus: IIOBus read GetIOBus write SetIOBus;
-    property OnIORead: TIOReadNotifyEvent read GetOnIORead write SetOnIORead;
-    property OnIOWrite: TIOWriteNotifyEvent read GetOnIOWrite write SetOnIOWrite;
+    function OnIORead(ADevice: IIOBusDevice; AAddress: Word; out AData: Byte): Boolean;
+    procedure OnIOWrite(Sender: IIOBusDevice; AAddress: Word; AData: Byte);
 
     { Memory bus device API }
     function GetMemoryBus: IMemoryBus;
@@ -1487,16 +1464,6 @@ begin
   FIOBus := AValue;
 end;
 
-procedure TCpu8088.SetOnIORead(AValue: TIOReadNotifyEvent);
-begin
-  FOnIORead := AValue;
-end;
-
-procedure TCpu8088.SetOnIOWrite(AValue: TIOWriteNotifyEvent);
-begin
-  FOnIOWrite := AValue;
-end;
-
 procedure TCpu8088.WriteIOByte(AAddress: Word; AData: Byte);
 begin
   IOBus.InvokeWrite(Self, AAddress, AData);
@@ -1505,6 +1472,17 @@ end;
 function TCpu8088.ReadIOByte(AAddress: Word): Byte;
 begin
   IOBus.InvokeRead(Self, AAddress, Result);
+end;
+
+function TCpu8088.OnIORead(ADevice: IIOBusDevice; AAddress: Word; out
+  AData: Byte): Boolean;
+begin
+  { Nothing reads from the CPU }
+end;
+
+procedure TCpu8088.OnIOWrite(Sender: IIOBusDevice; AAddress: Word; AData: Byte);
+begin
+  { Nothing writes to the CPU }
 end;
 
 function TCpu8088.GetMemoryBus: IMemoryBus;
@@ -3467,16 +3445,6 @@ end;
 function TCpu8088.GetIOBus: IIOBus;
 begin
   Result := FIOBus;
-end;
-
-function TCpu8088.GetOnIORead: TIOReadNotifyEvent;
-begin
-
-end;
-
-function TCpu8088.GetOnIOWrite: TIOWriteNotifyEvent;
-begin
-
 end;
 
 end.

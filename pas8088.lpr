@@ -6,9 +6,9 @@ uses
   {$IFDEF UNIX}
   //cthreads,
   {$ENDIF}
-  Classes, SysUtils, StrUtils, Math,
-  Cpu8088, Memory, IO, Machine, IConvEnc,
-  RayLib, RayMath;
+  Classes, SysUtils, StrUtils, Math, IConvEnc,
+  RayLib, RayMath,
+  Cpu8088, Memory, IO, Machine;
 
 type
 
