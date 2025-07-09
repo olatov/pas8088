@@ -59,6 +59,7 @@ begin
   Cpu := TCpu8088.Create(Result);
   Result.InstallCpu(Cpu);
   IOBus.AttachDevice(Cpu);
+  MemoryBus.AttachDevice(Cpu);
 
   Result.Initialize;
 

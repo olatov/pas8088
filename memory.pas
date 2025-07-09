@@ -54,14 +54,20 @@ type
         MemoryBlock: IMemoryBlock;
       end;
   private
+    FDevices: specialize TArray<IMemoryBusDevice>;
     FMemoryMap: specialize TArray<TMemorySlot>;
     function SegmentToPhysical(ASegment, AOffset: Word): TPhysicalAddress;
     function FindMemorySlot(AAddress: TPhysicalAddress): TMemorySlot;
-  public
+
     procedure WriteByte(AAddress: TPhysicalAddress; AData: Byte);
     function ReadByte(AAddress: TPhysicalAddress): Byte;
     procedure WriteByte(ASegment, AOffset: Word; AData: Byte);
     function ReadByte(ASegment, AOffset: Word): Byte;
+  public
+    procedure AttachDevice(ADevice: IMemoryBusDevice);
+    procedure InvokeWrite(ADevice: IMemoryBusDevice; AAddress: TPhysicalAddress; AData: Byte);
+    procedure InvokeRead(ADevice: IMemoryBusDevice; AAddress: TPhysicalAddress; out AData: Byte);
+
     procedure InstallMemoryBlock(
         AAddress: TPhysicalAddress; AMemoryBlock: IMemoryBlock);
   end;
@@ -168,6 +174,34 @@ end;
 function TMemoryBus.ReadByte(ASegment, AOffset: Word): Byte;
 begin
   Result := ReadByte(SegmentToPhysical(ASegment, AOffset));
+end;
+
+procedure TMemoryBus.AttachDevice(ADevice: IMemoryBusDevice);
+begin
+  Insert(ADevice, FDevices, Integer.MaxValue);
+  ADevice.MemoryBus := Self;
+end;
+
+procedure TMemoryBus.InvokeWrite(
+  ADevice: IMemoryBusDevice; AAddress: TPhysicalAddress; AData: Byte);
+var
+  Device: IMemoryBusDevice;
+begin
+  for Device in FDevices do
+    if (Device <> ADevice) and Assigned(Device.OnMemoryWrite) then
+      Device.OnMemoryWrite(ADevice, AAddress, AData);
+end;
+
+procedure TMemoryBus.InvokeRead(
+  ADevice: IMemoryBusDevice; AAddress: TPhysicalAddress; out AData: Byte);
+var
+  Device: IMemoryBusDevice;
+begin
+  for Device in FDevices do
+    if (Device <> ADevice)
+        and Assigned(Device.OnMemoryRead)
+        and Device.OnMemoryRead(ADevice, AAddress, AData) then Exit;
+  AData := $FF;
 end;
 
 procedure TMemoryBus.InstallMemoryBlock(AAddress: TPhysicalAddress;
