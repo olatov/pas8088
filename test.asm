@@ -1,19 +1,22 @@
 start:
   mov ax, 0x0060
   mov ds, ax
-  mov es, ax
   mov ss, ax
+  mov ax, 0xb800
+  mov es, ax
 
-  mov ax, 0
-  mov cx, 10
-repeat:
-  inc ax
-  loop repeat
-  mov bx, foo
-  mov cx, [bx]
-  mov dx, cx
+  ;lds si,[0x7c]
+  ;mov dx, ds
+  
+  ;mov al, 65
+  ;mov [es:0], al
+
+  mov al, 66
+  mov [es:162], al
+
+  ;mov ax, 20
+  ;mov bx, 3
+  ;div bl
+  
 end:
   hlt
-
-foo: dw 0x1234
-

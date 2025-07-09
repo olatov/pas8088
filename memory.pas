@@ -7,7 +7,7 @@ interface
 
 uses
   Classes, SysUtils, Math,
-  Cpu8088;
+  Hardware, Cpu8088;
 
 type
 
@@ -199,7 +199,7 @@ begin
   for Device in FDevices do
     if (Device <> ADevice)
         and Device.OnMemoryRead(ADevice, AAddress, AData) then Exit;
-  AData := $FF;
+  AData := 0;
 end;
 
 end.

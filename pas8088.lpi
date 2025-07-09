@@ -117,6 +117,16 @@
         <IsPartOfProject Value="True"/>
         <UnitName Value="VideoController"/>
       </Unit>
+      <Unit>
+        <Filename Value="interrups.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Interrups"/>
+      </Unit>
+      <Unit>
+        <Filename Value="hardware.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Hardware"/>
+      </Unit>
     </Units>
   </ProjectOptions>
   <CompilerOptions>

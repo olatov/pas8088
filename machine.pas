@@ -6,7 +6,7 @@ interface
 
 uses
   Classes, SysUtils,
-  Cpu8088;
+  Cpu8088, VideoController, Hardware;
 
 type
 
@@ -17,6 +17,8 @@ type
     FCpu: TCpu8088;
     FIOBus: IIOBus;
     FMemoryBus: IMemoryBus;
+    FVideo: TVideoController;
+    FMemory: specialize TArray<IMemoryBusDevice>;
     procedure SetCpu(AValue: TCpu8088);
     procedure SetIOBus(AValue: IIOBus);
     procedure SetMemoryBus(AValue: IMemoryBus);
@@ -24,12 +26,15 @@ type
     property Cpu: TCpu8088 read FCpu write SetCpu;
     property MemoryBus: IMemoryBus read FMemoryBus write SetMemoryBus;
     property IOBus: IIOBus read FIOBus write SetIOBus;
+    property Video: TVideoController read FVideo;
     procedure Tick;
     procedure Run(ATicks: Integer=1000);
     procedure Initialize;
     procedure InstallCpu(ACpu: TCpu8088);
     procedure InstallMemoryBus(AMemoryBus: IMemoryBus);
     procedure InstallIOBus(AIOBus: IIOBus);
+    procedure InstallMemory(AMemory: IMemoryBusDevice);
+    procedure InstallVideo(AVideo: TVideoController);
   end;
 
 implementation
@@ -69,6 +74,7 @@ end;
 procedure TMachine.Initialize;
 var
   Errors: TStringList;
+  MemoryBlock: IMemoryBusDevice;
 begin
   Errors := TStringList.Create;
   Errors.Delimiter := ';';
@@ -86,6 +92,18 @@ begin
     FreeAndNil(Errors);
   end;
 
+  IOBus.AttachDevice(Cpu);
+  MemoryBus.AttachDevice(Cpu);
+
+  if Assigned(FVideo) then
+  begin
+    MemoryBus.AttachDevice(FVideo);
+    IOBus.AttachDevice(FVideo);
+  end;
+
+  for MemoryBlock in FMemory do
+    MemoryBus.AttachDevice(MemoryBlock);
+
   Cpu.Reset;
 end;
 
@@ -102,6 +120,16 @@ end;
 procedure TMachine.InstallIOBus(AIOBus: IIOBus);
 begin
   IOBus := AIOBus;
+end;
+
+procedure TMachine.InstallMemory(AMemory: IMemoryBusDevice);
+begin
+  Insert(AMemory, FMemory, Integer.MaxValue);
+end;
+
+procedure TMachine.InstallVideo(AVideo: TVideoController);
+begin
+  FVideo := AVideo;
 end;
 
 end.

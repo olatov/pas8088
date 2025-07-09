@@ -8,7 +8,11 @@ uses
   {$ENDIF}
   Classes, SysUtils, StrUtils, Math, IConvEnc,
   RayLib, RayMath,
-  Cpu8088, Memory, IO, Machine;
+  Cpu8088, Memory, IO, Machine, VideoController, Interrups, Hardware;
+
+const
+  FPS = 50;
+  Cycles = 15000;
 
 type
 
@@ -17,7 +21,9 @@ type
   TApp = class
   public
     Target: TRenderTexture;
+    Speed: Integer;
     procedure Run;
+    procedure RenderDisplay(AVideo: TVideoController);
     function BuildMachine: TMachine;
     function InterruptHook(ASender: TObject; ANumber: Byte): Boolean;
     procedure OnInstruction(ASender: TObject; AInstruction: TInstruction);
@@ -25,74 +31,67 @@ type
 
 function TApp.BuildMachine: TMachine;
 var
-  MemoryBus: TMemoryBus;
   BiosRom: TRomMemoryBlock;
   BiosStream: TStream;
   Ram, VideoRam: TRamMemoryBlock;
-  TestProgramStream: TStream;
-  IOBus: TIOBus;
-  Cpu: TCpu8088;
+  TestProgram: TBytesStream;
+  NmiGate: TNmiGate;
+  Tst: TRamMemoryBlock;
 begin
   Result := TMachine.Create(Nil);
 
+  { Cpu }
+  Result.InstallCpu(TCpu8088.Create(Result));
+
   { I/O }
-  IOBus := TIOBus.Create(Result);
-  Result.InstallIOBus(IOBus);
+  Result.InstallIOBus(TIOBus.Create(Result));
 
   { RAM / ROM }
-  MemoryBus := TMemoryBus.Create(Result);
+  Result.InstallMemoryBus(TMemoryBus.Create(Result));
 
-  Ram := TRamMemoryBlock.Create(MemoryBus, 1024 * 128, $0);
-  MemoryBus.AttachDevice(Ram);
+  Ram := TRamMemoryBlock.Create(Result, 1024 * 608, $0);
+  Result.InstallMemory(Ram);
 
-  BiosRom := TRomMemoryBlock.Create(MemoryBus, 1024 * 8, $FE000);
-  MemoryBus.AttachDevice(BiosRom);
+  BiosRom := TRomMemoryBlock.Create(Result, 1024 * 8, $FE000);
+  Result.InstallMemory(BiosRom);
+
+  VideoRam := TRamMemoryBlock.Create(Result, 1024 * 32, $B8000);
+  Result.InstallMemory(VideoRam);
 
   { Video }
-  VideoRam := TRamMemoryBlock.Create(MemoryBus, 1024 * 32, $BF000);
-  MemoryBus.AttachDevice(VideoRam);
-
-  Result.InstallMemoryBus(MemoryBus);
-
-  { Cpu }
-  Cpu := TCpu8088.Create(Result);
-  Result.InstallCpu(Cpu);
-  IOBus.AttachDevice(Cpu);
-  MemoryBus.AttachDevice(Cpu);
+  Result.InstallVideo(TVideoController.Create(Result));
+  NmiGate := TNmiGate.Create(Result);
+  Result.Video.NmiGate := NmiGate;
+  Result.Video.NmiGate.AttachCpu(Result.Cpu);
+  Result.IOBus.AttachDevice(NmiGate);
 
   Result.Initialize;
 
-  BiosStream := TBytesStream.Create([
-    $EA, $00, $00, $60, $00   { jmp 0x0060:0x0000 }
-  ]);
-
+  BiosStream := TFileStream.Create('poisk_1991.bin', fmOpenRead);
   try
-    BiosRom.LoadFromStream(BiosStream, $2000 - $10);
+    BiosRom.LoadFromStream(BiosStream);
   finally
     FreeAndNil(BiosStream);
   end;
 
-  { Test program }
-  TestProgramStream := TFileStream.Create('test.bin', fmOpenRead);
-  try
-    Ram.LoadFromStream(TestProgramStream, $00600);
-  finally
-    FreeAndNil(TestProgramStream);
-  end;
+  //Tst := TRamMemoryBlock.Create(Result, 64*1024, $80000);
+  //Result.InstallMemory(Tst);
 end;
 
 procedure TApp.Run;
 var
   Computer: TMachine;
+  I: Integer;
 
 begin
   SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-  InitWindow(800, 600, 'TEST');
-  SetTargetFPS(50);
+  InitWindow(800, 600, 'Poisk');
+  SetTargetFPS(FPS);
 
   Target := LoadRenderTexture(640, 400);
 
   Computer := BuildMachine;
+  Speed := Cycles;
 
   Computer.Cpu.InterruptHook := @InterruptHook;
   Computer.Cpu.OnAfterInstruction := @OnInstruction;
@@ -100,7 +99,12 @@ begin
   while not WindowShouldClose do
   begin
     try
-      Computer.Run(10000);
+      I := 0;
+      while I < Speed do
+      begin
+        Inc(I);
+        Computer.Tick;
+      end;
     except
       on E: Exception do
         begin
@@ -113,7 +117,7 @@ begin
     BeginTextureMode(Target);
       ClearBackground(BLANK);
 
-      { Todo: Render display }
+      RenderDisplay(Computer.Video);
 
     EndTextureMode;
 
@@ -137,11 +141,38 @@ begin
   FreeAndNil(Computer);
 end;
 
+procedure TApp.RenderDisplay(AVideo: TVideoController);
+var
+  Pixel: TColorB;
+  Row, Col: Integer;
+  Line: TScanLine;
+begin
+  ClearBackground(BLACK);
+
+  { Todo: Too slow, redo }
+
+  for Row := 0 to High(TVideoRows) do
+  begin
+    Line := AVideo.ScanLines[Row];
+    for Col := 0 to High(Line) do
+    begin
+      Pixel := TColorB(Line[Col] or $FF000000);
+      DrawLine(Col, Row * 2, Col + 1, (Row * 2) + 3, Pixel);
+      //DrawLine(Col, (Row * 2) + 1, Col + 1, (Row * 2) + 2, ColorBrightness(Pixel, -0.15));
+    end;
+  end;
+
+  DrawFPS(550, 5);
+end;
+
 function TApp.InterruptHook(ASender: TObject; ANumber: Byte): Boolean;
 var
   Cpu: TCpu8088 absolute ASender;
   Message: String = '';
+  TestProgram: TBytesStream;
+  I: Integer;
 begin
+  Writeln(Format('INT %.x', [ANumber]));
   case ANumber of
     $10:
       begin
@@ -149,9 +180,23 @@ begin
           $0E: { teletype }
             begin
               Iconvert(Char(Cpu.Registers.AL), Message, 'cp866', 'utf-8');
-              Write(Message);
+              //Write(Message);
             end;
         end;
+      end;
+    $19:
+      begin
+        TestProgram := TBytesStream.Create;
+        TestProgram.LoadFromFile('test.bin');
+        for I := 0 To TestProgram.Size - 1 do
+          Cpu.MemoryBus.InvokeWrite(
+            Nil, $10000 + I, TestProgram.ReadByte);
+        TestProgram.Free;
+
+        Cpu.Registers.CS := $1000;
+        Cpu.Registers.IP := $0000;
+        Speed := 1;
+        Result := True;
       end;
   end;
   Result := False;
@@ -159,7 +204,8 @@ end;
 
 procedure TApp.OnInstruction(ASender: TObject; AInstruction: TInstruction);
 begin
-  //(ASender as TCpu8088).DumpCurrentInstruction;
+  if Speed < 100 then
+    (ASender as TCpu8088).DumpCurrentInstruction;
 end;
 
 var

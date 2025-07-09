@@ -5,7 +5,7 @@ unit VideoController;
 interface
 
 uses
-  Classes, SysUtils,
+  Classes, SysUtils, Math, Hardware,
   Cpu8088;
 
 const
@@ -54,53 +54,58 @@ var
 type
   { TVideoController }
 
-  TVideoController = class(TComponent)
+  TVideoController = class(TComponent, IMemoryBusDevice, IIOBusDevice)
   private
     type
       TVideoMode = (vmText40, vmText80, vmGraphics320, vmGraphics640);
     const
       BaseSegment = $B800;
   private
-    FActiveMode: TVideoMode;
     FBackgroundColor: TColor;
     FGetActivePallette: TCGAPallette;
+    FLatch: array[$28..$2A] of Byte;
+    FVideoModeSelector: Byte;
+    function GetActiveMode: TVideoMode;
     function GetActivePallette: TCGAPallette;
     function GetBitsPerPixel: Byte;
     function GetSegment: Word;
-    procedure SetActiveMode(AValue: TVideoMode);
     procedure SetBackgroundColor(AValue: TColor);
   private
     FIOBus: IIOBus;
     FMemoryBus: IMemoryBus;
+    FNmiGate: INmiGate;
     function GetScanlines(ANumber: TVideoRows): TScanline;
-    procedure SetIOBus(AValue: IIOBus);
-    procedure SetMemoryBus(AValue: IMemoryBus);
     property BackgroundColor: TColor read FBackgroundColor write SetBackgroundColor;
     property ActivePallette: TCGAPallette read GetActivePallette;
-    property ActiveMode: TVideoMode read FActiveMode write SetActiveMode;
+    property ActiveMode: TVideoMode read GetActiveMode;
     property Segment: Word read GetSegment;
     property BitsPerPixel: Byte read GetBitsPerPixel;
   public
-    property MemoryBus: IMemoryBus read FMemoryBus write SetMemoryBus;
-    property IOBus: IIOBus read FIOBus write SetIOBus;
+    property NmiGate: INmiGate read FNmiGate write FNmiGate;
     property ScanLines[ANumber: TVideoRows]: TScanLine read GetScanLines;
+
+    { Memory bus device API }
+    function GetMemoryBus: IMemoryBus;
+    procedure SetMemoryBus(AValue: IMemoryBus);
+    procedure WriteMemoryByte(AAddress: TPhysicalAddress; AData: Byte);
+    function ReadMemoryByte(AAddress: TPhysicalAddress): Byte;
+    property MemoryBus: IMemoryBus read GetMemoryBus write SetMemoryBus;
+    function OnMemoryRead(Sender: IMemoryBusDevice; AAddress: TPhysicalAddress; out AData: Byte): Boolean;
+    procedure OnMemoryWrite(Sender: IMemoryBusDevice; AAddress: TPhysicalAddress; AData: Byte);
+
+    { IO bus device API }
+    function GetIOBus: IIOBus;
+    procedure SetIOBus(AValue: IIOBus);
+    procedure WriteIOByte(AAddress: Word; AData: Byte);
+    function ReadIOByte(AAddress: Word): Byte;
+    property IOBus: IIOBus read GetIOBus write SetIOBus;
+    function OnIORead(ADevice: IIOBusDevice; AAddress: Word; out AData: Byte): Boolean;
+    procedure OnIOWrite(Sender: IIOBusDevice; AAddress: Word; AData: Byte);
   end;
 
 implementation
 
 { TVideoController }
-
-procedure TVideoController.SetIOBus(AValue: IIOBus);
-begin
-  if FIOBus = AValue then Exit;
-  FIOBus := AValue;
-end;
-
-procedure TVideoController.SetActiveMode(AValue: TVideoMode);
-begin
-  if FActiveMode = AValue then Exit;
-  FActiveMode := AValue;
-end;
 
 function TVideoController.GetSegment: Word;
 begin
@@ -126,6 +131,18 @@ begin
     Result := CGAPallettes[4];
 end;
 
+function TVideoController.GetActiveMode: TVideoMode;
+begin
+  case FVideoModeSelector of
+    %0110: Result := vmText40;
+    %1101: Result := vmText80;
+    %0010: Result := vmGraphics320;
+    %1010: Result := vmGraphics640;
+  else
+    Result := vmText40;
+  end;
+end;
+
 procedure TVideoController.SetBackgroundColor(AValue: TColor);
 begin
   if FBackgroundColor = AValue then Exit;
@@ -140,8 +157,6 @@ var
   Pallette: TCGAPallette;
   ColorIndex, ColorMask: Byte;
 begin
-  ActiveMode := vmText40;
-
   Addr := ((ANumber shr 1) * 80);
   if (Odd(ANumber)) then Inc(Addr, $2000);
 
@@ -152,7 +167,8 @@ begin
   I := Low(Result);
   while I <= High(Result) do
   begin
-    Data := MemoryBus.ReadByte(Segment, Addr);
+    Data := ReadMemoryByte((Segment shl 4) + Addr);
+
     for J := ((8 Div BitsPerPixel) - 1) downto 0 do
     begin
       ColorIndex := (Data shr (J * BitsPerPixel) and ColorMask);
@@ -164,10 +180,104 @@ begin
   end;
 end;
 
+function TVideoController.GetMemoryBus: IMemoryBus;
+begin
+  Result := FMemoryBus;
+end;
+
 procedure TVideoController.SetMemoryBus(AValue: IMemoryBus);
 begin
   if FMemoryBus = AValue then Exit;
   FMemoryBus := AValue;
+end;
+
+procedure TVideoController.WriteMemoryByte(
+  AAddress: TPhysicalAddress; AData: Byte);
+begin
+
+end;
+
+function TVideoController.ReadMemoryByte(AAddress: TPhysicalAddress): Byte;
+begin
+  if not Assigned(MemoryBus) then Exit;
+  MemoryBus.InvokeRead(Self, AAddress, Result);
+end;
+
+function TVideoController.OnMemoryRead(Sender: IMemoryBusDevice;
+  AAddress: TPhysicalAddress; out AData: Byte): Boolean;
+begin
+  Result := False;
+end;
+
+procedure TVideoController.OnMemoryWrite(Sender: IMemoryBusDevice;
+  AAddress: TPhysicalAddress; AData: Byte);
+var
+  Offset: Word;
+begin
+  if InRange(AAddress, $B8000, $BFFFF) then
+  begin
+    { NMI trap }
+
+    Offset := AAddress - $B8000;
+    if Offset < $4000 then
+    begin
+      FLatch[$28] := Lo(Offset);
+      FLatch[$29] := Hi(Offset);
+      FLatch[$2A] := AData;
+      if Assigned(NmiGate) then NmiGate.RaiseNmi;
+    end;
+  end;
+end;
+
+function TVideoController.GetIOBus: IIOBus;
+begin
+  Result := FIOBus;
+end;
+
+procedure TVideoController.SetIOBus(AValue: IIOBus);
+begin
+  FIOBus := AValue;
+end;
+
+procedure TVideoController.WriteIOByte(AAddress: Word; AData: Byte);
+begin
+  { n / a }
+end;
+
+function TVideoController.ReadIOByte(AAddress: Word): Byte;
+begin
+
+end;
+
+function TVideoController.OnIORead(ADevice: IIOBusDevice; AAddress: Word; out
+  AData: Byte): Boolean;
+begin
+  case AAddress of
+    $28..$2A:
+      begin
+        AData := FLatch[AAddress];
+        Result := True;
+      end;
+  else
+    Result := False;
+  end;
+end;
+
+procedure TVideoController.OnIOWrite(Sender: IIOBusDevice; AAddress: Word;
+  AData: Byte);
+begin
+  case AAddress of
+    $68:
+      FVideoModeSelector :=
+        (FVideoModeSelector and $F3) or ((AData shr 4) and $0C);
+    $6A:
+      FVideoModeSelector :=
+        (FVideoModeSelector and $FC) or ((AData shr 6) and $03);
+  end;
+  {
+                  ((_ports[0x68] >> 4) & 0b1100) |
+                  ((_ports[0x6a] >> 6) & 0b0011);
+  }
 end;
 
 end.
