@@ -1936,7 +1936,7 @@ var
   Old, Change, CarryIn: Byte;
   Result: Int16;
 begin
-  Old := Registers.AX;
+  Old := Registers.AL;
   CarryIn := IfThen(Registers.Flags.CF, 1, 0);
   Change := FetchCodeByte;
   Result := Old - (Change + CarryIn);
@@ -2010,7 +2010,7 @@ var
   Old, Change: Byte;
   Result: Int16;
 begin
-  Old := Registers.AX;
+  Old := Registers.AL;
   Change := FetchCodeByte;
   Result := Old - Change;
   Registers.AL := Byte(Result);
@@ -2050,7 +2050,7 @@ var
   Result: Int32;
 begin
   ModRM := FetchModRM;
-  Old := ReadRM8(ModRM);
+  Old := ReadRM16(ModRM);
   Change := Registers.GetByIndex16(ModRM.Reg);
   Result := Old - Change;
   WriteRM16(ModRM, Word(Result));
@@ -2079,7 +2079,7 @@ var
 begin
   ModRM := FetchModRM;
   Old := Registers.GetByIndex16(ModRM.Reg);
-  Change := ReadRM8(ModRM);
+  Change := ReadRM16(ModRM);
   Result := Old - Change;
   WriteRM16(ModRM, Word(Result));
   Registers.Flags.UpdateAfterSub16(Old, Change, Result);
@@ -2417,7 +2417,7 @@ var
   Result: Int32;
 begin
   ModRM := FetchModRM;
-  Old := ReadRM8(ModRM);
+  Old := ReadRM16(ModRM);
   CarryIn := IfThen(Registers.Flags.CF, 1, 0);
   Change := Registers.GetByIndex16(ModRM.Reg);
   Result := Old - (Change + CarryIn);
