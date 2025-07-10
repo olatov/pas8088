@@ -11,8 +11,8 @@ uses
   Cpu8088, Memory, IO, Machine, VideoController, Interrups, Hardware, Debugger;
 
 const
-  FPS = 25;
-  Cycles = 750000 div FPS;
+  FPS = 50;
+  Cycles = 1000000 div FPS;
   BiosFile = 'poisk_1991.bin';
   //BiosFile = 'test.bin';
 
@@ -77,13 +77,12 @@ begin
   { Video }
   Result.InstallVideo(TVideoController.Create(Result));
   NmiTrigger := TNmiTrigger.Create(Result);
-  Result.Video.NmiGate := NmiTrigger;
-  Result.Video.NmiGate.AttachCpu(Result.Cpu);
+  Result.Video.NmiTrigger := NmiTrigger;
+  Result.Video.NmiTrigger.AttachCpu(Result.Cpu);
   Result.IOBus.AttachDevice(NmiTrigger);
 
   Result.Initialize;
 
-  //BiosStream := TFileStream.Create('poisk_1991.bin', fmOpenRead);
   BiosStream := TFileStream.Create(BiosFile, fmOpenRead);
   try
     BiosRom.LoadFromStream(BiosStream);
@@ -154,7 +153,6 @@ begin
     end;
 
     BeginTextureMode(Target);
-      { ClearBackground(BLANK); }
       RenderDisplay(Computer.Video);
       DrawFPS(550, 5);
     EndTextureMode;
@@ -188,7 +186,7 @@ var
   Row, Col: Integer;
   Line: TScanLine;
 begin
-  ClearBackground(BLACK);
+  ClearBackground(TColorB(AVideo.BackgroundColor or $FF000000));
 
   { Todo: Too slow, redo }
 
@@ -197,6 +195,8 @@ begin
     Line := AVideo.ScanLines[Row];
     for Col := 0 to High(Line) do
     begin
+      if Line[Col] = AVideo.BackgroundColor then Continue;
+
       Pixel := TColorB(Line[Col] or $FF000000);
       DrawLine(Col, Row * 2, Col, (Row * 2) + 2, Pixel);
     end;

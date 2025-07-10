@@ -17,7 +17,7 @@ void main()
 
     // If even line, darken
     if (int(floor(y)) % 2 == 0) {
-        color.rgb *= 0.85;
+        color.rgb *= 0.9;
     }
 
     finalColor = color;

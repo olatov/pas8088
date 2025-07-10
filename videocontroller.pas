@@ -77,14 +77,14 @@ type
     FMemoryBus: IMemoryBus;
     FNmiTrigger: INmiTrigger;
     function GetScanlines(ANumber: TVideoRows): TScanline;
-    property BackgroundColor: TColor read FBackgroundColor write SetBackgroundColor;
     property ActivePallette: TCGAPallette read GetActivePallette;
     property ActiveMode: TVideoMode read GetActiveMode;
     property Segment: Word read GetSegment;
     property BitsPerPixel: Byte read GetBitsPerPixel;
   public
-    property NmiGate: INmiTrigger read FNmiTrigger write FNmiTrigger;
+    property NmiTrigger: INmiTrigger read FNmiTrigger write FNmiTrigger;
     property ScanLines[ANumber: TVideoRows]: TScanLine read GetScanLines;
+    property BackgroundColor: TColor read FBackgroundColor;
 
     { Memory bus device API }
     function GetMemoryBus: IMemoryBus;
@@ -164,6 +164,7 @@ begin
   if (Odd(ANumber)) then Inc(Addr, $2000);
 
   Pallette := ActivePallette;
+  Pallette[0] := BackgroundColor;
 
   ColorMask := (1 shl BitsPerPixel) - 1;
 
@@ -227,7 +228,7 @@ begin
       FLatch[$28] := Lo(Offset);
       FLatch[$29] := Hi(Offset);
       FLatch[$2A] := AData;
-      if Assigned(NmiGate) then NmiGate.RaiseNmi;
+      if Assigned(NmiTrigger) then NmiTrigger.RaiseNmi;
     end;
   end;
 end;
