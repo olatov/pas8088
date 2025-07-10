@@ -340,8 +340,10 @@ type
     procedure HandleMovRM16Reg16;  { $89 }
     procedure HandleMovReg8RM8;  { $8A }
     procedure HandleMovReg16RM16;  { $8B }
-    procedure HandleMovRM16SReg;  { $8C }
+    procedure HandleMovRM16Sreg;  { $8C }
+    procedure HandleLea;  { $8D }
     procedure HandleMovSRegRM16;  { $8E }
+    procedure HandlePopRM16;  { $8F }
 
     procedure HandleNop;  { $90 }
     procedure HandleXchgReg16;  { $91..$97 }
@@ -360,6 +362,8 @@ type
     procedure HandleMovDisp16AX;  { $A3 }
     procedure HandleMovsb;  { $A4 }
     procedure HandleMovsw;  { $A5 }
+    procedure HandleCmpsb;  { $A6 }
+    procedure HandleCmpsw;  { $A7 }
     procedure HandleTestALImm8;  { $A8 }
     procedure HandleTestAXImm16;  { $A9 }
     procedure HandleStosb;  { $AA }
@@ -1673,8 +1677,10 @@ begin
       $89:      FInstructionHandlers[I] := @HandleMovRM16Reg16;
       $8A:      FInstructionHandlers[I] := @HandleMovReg8RM8;
       $8B:      FInstructionHandlers[I] := @HandleMovReg16RM16;
-      $8C:      FInstructionHandlers[I] := @HandleMovRM16SReg;
+      $8C:      FInstructionHandlers[I] := @HandleMovRM16Sreg;
+      $8D:      FInstructionHandlers[I] := @HandleLea;
       $8E:      FInstructionHandlers[I] := @HandleMovSRegRM16;
+      $8F:      FInstructionHandlers[I] := @HandlePopRM16;
       $90:      FInstructionHandlers[I] := @HandleNop;
       $91..$97: FInstructionHandlers[I] := @HandleXchgReg16;
       $98:      FInstructionHandlers[I] := @HandleCbw;
@@ -1691,8 +1697,8 @@ begin
       $A3:      FInstructionHandlers[I] := @HandleMovDisp16AX;
       $A4:      FInstructionHandlers[I] := @HandleMovsb;
       $A5:      FInstructionHandlers[I] := @HandleMovsw;
-      { $A6 Movsw }
-      { $A7 Cmpsb }
+      $A6:      FInstructionHandlers[I] := @HandleCmpsb;
+      $A7:      FInstructionHandlers[I] := @HandleCmpsw;
       $A8:      FInstructionHandlers[I] := @HandleTestALImm8;
       $A9:      FInstructionHandlers[I] := @HandleTestAXImm16;
       $AA:      FInstructionHandlers[I] := @HandleStosb;
@@ -2628,7 +2634,15 @@ var
   ModRM: TModRM;
 begin
   ModRM := FetchModRM;
-  WriteRM16(ModRM, Registers.GetByIndex16(Ord(riES) + ModRm.Reg));
+  WriteRM16(ModRM, Registers.GetByIndex16(Ord(riES) + ModRM.Reg));
+end;
+
+procedure TCpu8088.HandleLea;
+var
+  ModRM: TModRM;
+begin
+  ModRM := FetchModRM;
+  Registers.SetByIndex16(ModRM.Reg, ModRM.EffectiveAddr);
 end;
 
 procedure TCpu8088.HandleMovSRegRM16;
@@ -2641,6 +2655,11 @@ begin
   Data := ReadRM16(Param);
   DestIndex := TRegisters.TRegIndex16(Param.Reg + 8);
   Registers.SetByIndex16(DestIndex, Data);
+end;
+
+procedure TCpu8088.HandlePopRM16;
+begin
+  WriteRM16(FetchModRM, Pop);
 end;
 
 procedure TCpu8088.HandleWait;
@@ -2723,6 +2742,28 @@ begin
     Registers.SI := Registers.SI - 2;
     Registers.DI := Registers.DI - 2;
   end;
+end;
+
+procedure TCpu8088.HandleCmpsb;
+var
+  Delta: array[False..True] of Int8 = (1, -1);
+begin
+  Cmp8(
+    ReadMemoryByte(DataSegment, Registers.SI),
+    ReadMemoryByte(Registers.ES, Registers.DI));
+  Registers.SI := Registers.SI + Delta[Registers.flags.DF];
+  Registers.DI := Registers.DI + Delta[Registers.Flags.DF];
+end;
+
+procedure TCpu8088.HandleCmpsw;
+var
+  Delta: array[False..True] of Int8 = (2, -2);
+begin
+  Cmp16(
+    ReadMemoryWord(DataSegment, Registers.SI),
+    ReadMemoryWord(Registers.ES, Registers.DI));
+  Registers.SI := Registers.SI + Delta[Registers.flags.DF];
+  Registers.DI := Registers.DI + Delta[Registers.Flags.DF];
 end;
 
 procedure TCpu8088.HandleTestALImm8;
