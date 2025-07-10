@@ -11,8 +11,8 @@ uses
   Cpu8088, Memory, IO, Machine, VideoController, Interrups, Hardware, Debugger;
 
 const
-  FPS = 50;
-  Cycles = 20000;
+  FPS = 25;
+  Cycles = 750000 div FPS;
   BiosFile = 'poisk_1991.bin';
   //BiosFile = 'test.bin';
 
@@ -112,6 +112,9 @@ end;
 procedure TApp.Run;
 var
   Computer: TMachine;
+  ScanlineShader: TShader;
+  LinesLoc: Integer;
+  Tmp: Single = 400.0;
 
 begin
   SetConfigFlags(FLAG_WINDOW_RESIZABLE);
@@ -119,6 +122,7 @@ begin
   SetTargetFPS(FPS);
 
   Target := LoadRenderTexture(640, 400);
+  SetTextureFilter(Target.texture, TEXTURE_FILTER_BILINEAR);
 
   Computer := BuildMachine;
   Speed := Cycles;
@@ -127,6 +131,11 @@ begin
   Computer.Cpu.OnAfterInstruction := @OnInstruction;
 
   FDebugger.LoadProgram(BiosFile, BiosAddress);
+
+  ScanlineShader := LoadShader(Nil, TextFormat('scanlines.fs'));
+
+  LinesLoc := GetShaderLocation(ScanlineShader, 'lines');
+  SetShaderValue(ScanlineShader, LinesLoc, @Tmp, SHADER_UNIFORM_FLOAT);
 
   while not WindowShouldClose do
   begin
@@ -145,21 +154,23 @@ begin
     end;
 
     BeginTextureMode(Target);
-      ClearBackground(BLANK);
-
+      { ClearBackground(BLANK); }
       RenderDisplay(Computer.Video);
-
+      DrawFPS(550, 5);
     EndTextureMode;
 
     BeginDrawing;
-      DrawTexturePro(
-        Target.texture,
-        RectangleCreate(0, 0, 640, -400),
-        RectangleCreate(0, 0, GetScreenHeight * 1.333, GetScreenHeight),
-        Vector2Zero, 0, WHITE);
+      BeginShaderMode(ScanlineShader);
+        DrawTexturePro(
+          Target.texture,
+          RectangleCreate(0, 0, Target.texture.width, -Target.texture.height),
+          RectangleCreate(0, 0, GetScreenHeight * 1.333, GetScreenHeight),
+          Vector2Zero, 0, WHITE);
+      EndShaderMode;
     EndDrawing;
   end;
 
+  UnloadShader(ScanlineShader);
   UnloadRenderTexture(Target);
 
   CloseWindow;
@@ -187,12 +198,9 @@ begin
     for Col := 0 to High(Line) do
     begin
       Pixel := TColorB(Line[Col] or $FF000000);
-      DrawLine(Col, Row * 2, Col + 1, (Row * 2) + 3, Pixel);
-      //DrawLine(Col, (Row * 2) + 1, Col + 1, (Row * 2) + 2, ColorBrightness(Pixel, -0.15));
+      DrawLine(Col, Row * 2, Col, (Row * 2) + 2, Pixel);
     end;
   end;
-
-  DrawFPS(550, 5);
 end;
 
 function TApp.InterruptHook(ASender: TObject; ANumber: Byte): Boolean;
@@ -232,7 +240,7 @@ begin
   Frame.IP := Cpu.Registers.IP;
   Frame.Flags := Cpu.Registers.Flags.GetWord;
 
-  FDumpStream.Write(Frame, SizeOf(Frame));
+  //FDumpStream.Write(Frame, SizeOf(Frame));
 
 {
   FLogWriter.WriteLine('%.4x:%.4x | %s',
