@@ -61,7 +61,9 @@ type
       TVideoMode = (vmText40, vmText80, vmGraphics320, vmGraphics640);
     const
       BaseSegment = $B800;
+    procedure ActivateTrap(const AOffset: Word; const AData: Byte = 0);
   private
+    Tmp: Byte;
     FBackgroundColor: TColor;
     FGetActivePallette: TCGAPallette;
     FActivePalletteIndex: Byte;
@@ -132,6 +134,15 @@ begin
   else
     Result := CGAPallettes[4];
   end;
+end;
+
+procedure TVideoController.ActivateTrap(
+  const AOffset: Word; const AData: Byte = 0);
+begin
+  FLatch[$28] := Lo(AOffset);
+  FLatch[$29] := Hi(AOffset);
+  FLatch[$2A] := AData;
+  if Assigned(NmiTrigger) then NmiTrigger.RaiseNmi;
 end;
 
 function TVideoController.GetActiveMode: TVideoMode;
@@ -223,13 +234,7 @@ begin
     { NMI trap }
 
     Offset := AAddress - $B8000;
-    if Offset < $4000 then
-    begin
-      FLatch[$28] := Lo(Offset);
-      FLatch[$29] := Hi(Offset);
-      FLatch[$2A] := AData;
-      if Assigned(NmiTrigger) then NmiTrigger.RaiseNmi;
-    end;
+    if Offset < $4000 then ActivateTrap(Offset, AData);
   end;
 end;
 
@@ -255,6 +260,8 @@ end;
 
 function TVideoController.OnIORead(ADevice: IIOBusDevice; AAddress: Word; out
   AData: Byte): Boolean;
+var
+  Offset: Word;
 begin
   case AAddress of
     $28..$2A:
@@ -262,6 +269,21 @@ begin
         AData := FLatch[AAddress];
         Result := True;
       end;
+
+    $3D4, $3D5, $3D8, $3D9:
+      begin
+        Writeln(Format('CGA read %.x', [AAddress]));
+        ActivateTrap(Lo(AAddress) or $4000);
+      end;
+
+    $3DA:
+      begin
+        { Todo }
+        Writeln(Format('CGA read %.x', [AAddress]));
+        Tmp := Tmp xor 1;
+        Result := True;
+      end;
+
   else
     Result := False;
   end;
@@ -286,6 +308,9 @@ begin
         FVideoModeSelector :=
           (FVideoModeSelector and $FC) or ((AData shr 6) and $03);
       end;
+
+    $3D4, $3D5, $3D8, $3D9, $3DA:
+      Writeln(Format('CGA write %.x: %.2x', [AAddress, AData]));
   end;
 end;
 
