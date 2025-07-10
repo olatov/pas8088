@@ -2670,7 +2670,7 @@ begin
 
   case ModRM.Reg of
     0: TestRM8Imm8(ModRM, FetchCodeByte);
-    2: DecRM8(ModRM);
+    2: NotRM8(ModRM);
     4: MulALRM8(ModRM);
     6: DivALRM8(ModRM);
   else
@@ -2686,7 +2686,7 @@ begin
 
   case ModRM.Reg of
     0: TestRM16Imm16(ModRM, FetchCodeWord);
-    2: DecRM16(ModRM);
+    2: NotRM16(ModRM);
     4: MulAXRM16(ModRM);
     6: DivAXRM16(ModRM);
   else
