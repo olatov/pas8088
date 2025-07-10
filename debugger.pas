@@ -57,7 +57,10 @@ begin
   for Line in SourceLines do
   begin
     try
-      LineAddr := Hex2Dec(Copy(Line, 0, 8));
+      S := Trim(Copy(Line, 0, 8));
+      if S.IsEmpty then Continue;
+
+      LineAddr := Hex2Dec(S);
       LineCode := Trim(Copy(Line, 10, 17));
       LineAssembly := Trim(Copy(Line, 28, 32));
       FProgramLines.Add(LineAddr, LineAssembly);
