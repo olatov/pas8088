@@ -122,6 +122,8 @@ type
     procedure UpdateAfterShr8(AOld: Byte; ACount: Byte; AResult: Byte);
     procedure UpdateAfterShr16(AOld: Word; ACount: Byte; AResult: Word);
     procedure UpdateAfterSar8(AResult: Byte; ALastShiftedOut: Boolean);
+    procedure UpdateAfterRor8(AOld, ACount, AResult: Byte);
+    procedure UpdateAfterRor16(AOld, ACount, AResult: Word);
     procedure UpdateAfterMul8(AResult: Word);
     procedure UpdateAfterMul16(AResult: DWord);
   public
@@ -306,6 +308,8 @@ type
     procedure HandleAddAXImm16;  { $05 }
     procedure HandlePushES;  { $06 }
     procedure HandlePopES;  { $07 }
+    procedure HandleOrRM8Reg8;  { $08 }
+    procedure HandleOrRM16Reg16;  { $09 }
     procedure HandleOrReg8RM8;  { $0A }
     procedure HandleOrReg16RM16;  { $0A }
     procedure HandleOrALImm8;  { $0C }
@@ -325,6 +329,8 @@ type
     procedure HandlePushDS;  { $1E }
     procedure HandlePopDS;  { $1F }
 
+    procedure HandleAndRM8Reg8;  { $20 }
+    procedure HandleAndRM16Reg16;  { $21 }
     procedure HandleAndReg8RM8;  { $22 }
     procedure HandleAndReg16RM16;  { $23 }
     procedure HandleAndALImm8;  { 24 }
@@ -336,6 +342,8 @@ type
     procedure HandleSubReg8RM8;  { $2A }
     procedure HandleSubReg16RM16;  { $2B }
 
+    procedure HandleXorRM8Reg8;  { $30 }
+    procedure HandleXorRM16Reg16;  { $31 }
     procedure HandleXorReg8RM8;  { $32 }
     procedure HandleXorReg16RM16;  { $33 }
     procedure HandleCmpRM8Reg8;  { $38 }
@@ -369,6 +377,10 @@ type
     procedure HandleGRP1RM8Imm8;  { $80, $82 }
     procedure HandleGRP1RM16Imm16;  { $81 }
     procedure HandleGRP1RM16Imm8;  { 83 }
+    procedure HandleTestReg8RM8;  { 84 }
+    procedure HandleTestReg16RM16;  { 84 }
+    procedure HandleXchgReg8RM8;  { 86 }
+    procedure HandleXchgReg16RM16;  { 87 }
     procedure HandleMovRM8Reg8;  { $88 }
     procedure HandleMovRM16Reg16;  { $89 }
     procedure HandleMovReg8RM8;  { $8A }
@@ -398,6 +410,8 @@ type
     procedure HandleStosw;  { $AB }
     procedure HandleLodsb;  { $AC }
     procedure HandleLodsw;  { $AD }
+    procedure HandleScasb;  { $AE }
+    procedure HandleScasw;  { $AF }
 
     procedure HandleMovReg8Imm8;  { $B0..$B7 }
     procedure HandleMovReg16Imm16;  { $B8..$BF }
@@ -421,6 +435,8 @@ type
     procedure HandleGRP2RM16CL; { D3 }
     procedure HandleXlat;  { D7 }
 
+    procedure HandleLoope;  { $E0 }
+    procedure HandleLoopne;  { $E1 }
     procedure HandleLoop;  { $E2 }
     procedure HandleJcxz;  { $E3 }
     procedure HandleInALImm8;  { $E4 }
@@ -464,6 +480,10 @@ type
     procedure AddRM8Imm8(AModRM: TModRM; AImm: Byte);
     procedure AddRM16Imm16(AModRM: TModRM; AImm: Word);
     procedure AndRM8Imm8(AModRM: TModRM; AImm: Byte);
+    procedure AndRM8Reg8(AModRM: TModRM);
+    procedure AndRM16Reg16(AModRM: TModRM);
+    procedure SubRM16Imm16(AModRM: TModRM; AImm: Word);
+    procedure SubRM8Imm8(AModRM: TModRM; AImm: Byte);
     procedure AndRM16Imm16(AModRM: TModRM; AImm: Word);
     procedure Cmp8(AFirst, ASecond: Byte);
     procedure Cmp16(AFirst, ASecond: Word);
@@ -482,6 +502,8 @@ type
     procedure ShrRM16CL(AModRM: TModRM);
     procedure SarRM8Const1(AModRM: TModRM);
     procedure SarRM16Const1(AModRM: TModRM);
+    procedure RorRM8Const1(AModRM: TModRM);
+    procedure RorRM16Const1(AModRM: TModRM);
     procedure SarRM8CL(AModRM: TModRM);
     procedure SarRM16CL(AModRM: TModRM);
     procedure TestRM8Imm8(AModRM: TModRM; AImm: Byte);
@@ -975,6 +997,20 @@ begin
   UpdateSF8(AResult);
   UpdateZF8(AResult);
   UpdatePF8(AResult);
+end;
+
+procedure TFlagRegister.UpdateAfterRor8(AOld, ACount, AResult: Byte);
+begin
+  if ACount = 0 then Exit;
+  CF := (AOld shr (ACount - 1)) <> 0;
+  if ACount = 1 then OF_ := (AResult and $C0) in [$40, $80];
+end;
+
+procedure TFlagRegister.UpdateAfterRor16(AOld, ACount, AResult: Word);
+begin
+  if ACount = 0 then Exit;
+  CF := (AOld shr (ACount - 1)) <> 0;
+  if ACount = 1 then OF_ := (Hi(AResult) and $C0) in [$40, $80];
 end;
 
 procedure TFlagRegister.UpdateAfterMul8(AResult: Word);
@@ -1578,11 +1614,14 @@ begin
       $05:      FInstructionHandlers[I] := @HandleAddAXImm16;
       $06:      FInstructionHandlers[I] := @HandlePushES;
       $07:      FInstructionHandlers[I] := @HandlePopES;
+      $08:      FInstructionHandlers[I] := @HandleOrRM8Reg8;
+      $09:      FInstructionHandlers[I] := @HandleOrRM16Reg16;
       $0A:      FInstructionHandlers[I] := @HandleOrReg8RM8;
       $0B:      FInstructionHandlers[I] := @HandleOrReg16RM16;
       $0C:      FInstructionHandlers[I] := @HandleOrALImm8;
       $0D:      FInstructionHandlers[I] := @HandleOrAXImm16;
       $0E:      FInstructionHandlers[I] := @HandlePushCS;
+      { $0F : PopCS / [n/a] }
       $10:      FInstructionHandlers[I] := @HandleAdcRM8Reg8;
       $11:      FInstructionHandlers[I] := @HandleAdcRM16Reg16;
       $14:      FInstructionHandlers[I] := @HandleAdcALImm8;
@@ -1591,32 +1630,51 @@ begin
       $17:      FInstructionHandlers[I] := @HandlePopSS;
       $18:      FInstructionHandlers[I] := @HandleSbbRM8Reg8;
       $19:      FInstructionHandlers[I] := @HandleSbbRM16Reg16;
+      { $1A SbbReg8RM8 }
+      { $1B SbbReg16RM16 }
       $1C:      FInstructionHandlers[I] := @HandleSbbALImm8;
       $1D:      FInstructionHandlers[I] := @HandleSbbAXImm16;
       $1E:      FInstructionHandlers[I] := @HandlePushDS;
       $1F:      FInstructionHandlers[I] := @HandlePopDS;
+      $20:      FInstructionHandlers[I] := @HandleAndRM8Reg8;
+      $21:      FInstructionHandlers[I] := @HandleAndRM16Reg16;
       $22:      FInstructionHandlers[I] := @HandleAndReg8RM8;
       $23:      FInstructionHandlers[I] := @HandleAndReg16RM16;
       $24:      FInstructionHandlers[I] := @HandleAndALImm8;
       $25:      FInstructionHandlers[I] := @HandleAndAXImm16;
+      { $26 ES: [prefix] }
+      { $27 DAA }
       $28:      FInstructionHandlers[I] := @HandleSubRM8Reg8;
       $29:      FInstructionHandlers[I] := @HandleSubRM16Reg16;
       $2A:      FInstructionHandlers[I] := @HandleSubReg8RM8;
       $2B:      FInstructionHandlers[I] := @HandleSubReg16RM16;
       $2C:      FInstructionHandlers[I] := @HandleSubALImm8;
       $2D:      FInstructionHandlers[I] := @HandleSubAXImm16;
+      { $2E CS: [prefix] }
+      { $2F DAS }
+      $30:      FInstructionHandlers[I] := @HandleXorRM8Reg8;
+      $31:      FInstructionHandlers[I] := @HandleXorRM16Reg16;
       $32:      FInstructionHandlers[I] := @HandleXorReg8RM8;
       $33:      FInstructionHandlers[I] := @HandleXorReg16RM16;
+      { $34 XorALImm8 }
+      { $35 XorALImm16 }
+      { $36 SS: [prefix] }
+      { $37 AAA }
       $38:      FInstructionHandlers[I] := @HandleCmpRM8Reg8;
       $39:      FInstructionHandlers[I] := @HandleCmpRM16Reg16;
       $3A:      FInstructionHandlers[I] := @HandleCmpReg8RM8;
       $3B:      FInstructionHandlers[I] := @HandleCmpReg16RM16;
       $3C:      FInstructionHandlers[I] := @HandleCmpALImm8;
       $3D:      FInstructionHandlers[I] := @HandleCmpAXImm16;
+      { $3E DS: [prefix] }
+      { $3F AAS }
       $40..$47: FInstructionHandlers[I] := @HandleIncReg16;
       $48..$4F: FInstructionHandlers[I] := @HandleDecReg16;
       $50..$57: FInstructionHandlers[I] := @HandlePushReg16;
       $58..$5F: FInstructionHandlers[I] := @HandlePopReg16;
+      { $60..$6F [n/a] }
+      { $70 Jo }
+      { $71 Jno }
       $72:      FInstructionHandlers[I] := @HandleJbShort;
       $73:      FInstructionHandlers[I] := @HandleJaeShort;
       $74:      FInstructionHandlers[I] := @HandleJeShort;
@@ -1634,6 +1692,10 @@ begin
       $80, $82: FInstructionHandlers[I] := @HandleGRP1RM8Imm8;
       $81:      FInstructionHandlers[I] := @HandleGRP1RM16Imm16;
       $83:      FInstructionHandlers[I] := @HandleGRP1RM16Imm8;
+      $84:      FInstructionHandlers[I] := @HandleTestReg8RM8;
+      $85:      FInstructionHandlers[I] := @HandleTestReg16RM16;
+      $86:      FInstructionHandlers[I] := @HandleXchgReg8RM8;
+      $87:      FInstructionHandlers[I] := @HandleXchgReg16RM16;
       $88:      FInstructionHandlers[I] := @HandleMovRM8Reg8;
       $89:      FInstructionHandlers[I] := @HandleMovRM16Reg16;
       $8A:      FInstructionHandlers[I] := @HandleMovReg8RM8;
@@ -1644,6 +1706,7 @@ begin
       $98:      FInstructionHandlers[I] := @HandleCbw;
       $99:      FInstructionHandlers[I] := @HandleCwd;
       $9A:      FInstructionHandlers[I] := @HandleCallFar;
+      { $9B WAIT }
       $9C:      FInstructionHandlers[I] := @HandlePushf;
       $9D:      FInstructionHandlers[I] := @HandlePopf;
       $9E:      FInstructionHandlers[I] := @HandleSahf;
@@ -1654,20 +1717,26 @@ begin
       $A3:      FInstructionHandlers[I] := @HandleMovDisp16AX;
       $A4:      FInstructionHandlers[I] := @HandleMovsb;
       $A5:      FInstructionHandlers[I] := @HandleMovsw;
+      { $A6 Movsw }
+      { $A7 Cmpsb }
       $A8:      FInstructionHandlers[I] := @HandleTestALImm8;
       $A9:      FInstructionHandlers[I] := @HandleTestAXImm16;
       $AA:      FInstructionHandlers[I] := @HandleStosb;
       $AB:      FInstructionHandlers[I] := @HandleStosw;
       $AC:      FInstructionHandlers[I] := @HandleLodsb;
       $AD:      FInstructionHandlers[I] := @HandleLodsw;
+      $AE:      FInstructionHandlers[I] := @HandleScasb;
+      $AF:      FInstructionHandlers[I] := @HandleScasw;
       $B0..$B7: FInstructionHandlers[I] := @HandleMovReg8Imm8;
       $B8..$BF: FInstructionHandlers[I] := @HandleMovReg16Imm16;
+      { $C0, $C1 [n/a] }
       $C2:      FInstructionHandlers[I] := @HandleRetiNear;
       $C3:      FInstructionHandlers[I] := @HandleRetNear;
       $C4:      FInstructionHandlers[I] := @HandleLes;
       $C5:      FInstructionHandlers[I] := @HandleLds;
       $C6:      FInstructionHandlers[I] := @HandleMovRM8Imm8;
       $C7:      FInstructionHandlers[I] := @HandleMovRM16Imm16;
+      { $C8, $C9 [n/a] }
       $CA:      FInstructionHandlers[I] := @HandleRetiFar;
       $CB:      FInstructionHandlers[I] := @HandleRetFar;
       $CC:      FInstructionHandlers[I] := @HandleInt3;
@@ -1678,7 +1747,13 @@ begin
       $D1:      FInstructionHandlers[I] := @HandleGRP2RM16Const1;
       $D2:      FInstructionHandlers[I] := @HandleGRP2RM8CL;
       $D3:      FInstructionHandlers[I] := @HandleGRP2RM16CL;
+      { $D4 AAM }
+      { $D5 AAD }
+      { $D6 [n/a] }
       $D7:      FInstructionHandlers[I] := @HandleXlat;
+      { $D8..$DF fpu [n/a] }
+      $E0:      FInstructionHandlers[I] := @HandleLoopne;
+      $E1:      FInstructionHandlers[I] := @HandleLoope;
       $E2:      FInstructionHandlers[I] := @HandleLoop;
       $E3:      FInstructionHandlers[I] := @HandleJcxz;
       $E4:      FInstructionHandlers[I] := @HandleInALImm8;
@@ -1693,7 +1768,10 @@ begin
       $ED:      FInstructionHandlers[I] := @HandleInAXDX;
       $EE:      FInstructionHandlers[I] := @HandleOutDXAL;
       $EF:      FInstructionHandlers[I] := @HandleOutDXAX;
+      { $F0 Lock [perfix] }
       $F1:      FInstructionHandlers[I] := @HandleInt1;
+      { $F2 Repne [prefix] }
+      { $F3 Repe [prefix] }
       $F4:      FInstructionHandlers[I] := @HandleHlt;
       $F5:      FInstructionHandlers[I] := @HandleCmc;
       $F6:      FInstructionHandlers[I] := @HandleGRP3A;
@@ -1745,6 +1823,9 @@ begin
 
   Registers.Flags.IF_ := False;
   Registers.Flags.TF := False;
+
+  if ANumber = $B1 then
+    Vector := 0;
 
   Vector := ANumber * 4;
   Registers.CS := ReadMemoryWord(0, Vector + 2);
@@ -1841,15 +1922,35 @@ begin
   Registers.ES := Pop;
 end;
 
+procedure TCpu8088.HandleOrRM8Reg8;
+var
+  ModRM: TModRM;
+  Result: Byte;
+begin
+  ModRM := FetchModRM;
+  Result := ReadRM8(ModRM) or Registers.GetByIndex8(ModRM.Reg);;
+  WriteRM8(ModRM, Result);
+  Registers.Flags.UpdateAfterOr8(Result);
+end;
+
+procedure TCpu8088.HandleOrRM16Reg16;
+var
+  ModRM: TModRM;
+  Result: Word;
+begin
+  ModRM := FetchModRM;
+  Result := ReadRM16(ModRM) or Registers.GetByIndex16(ModRM.Reg);;
+  WriteRM16(ModRM, Result);
+  Registers.Flags.UpdateAfterOr16(Result);
+end;
+
 procedure TCpu8088.HandleOrReg8RM8;
 var
   ModRM: TModRM;
-  Old, Change, Result: Byte;
+  Result: Byte;
 begin
   ModRM := FetchModRM;
-  Old := Registers.GetByIndex8(ModRM.Reg);
-  Change := ReadRM8(ModRM);
-  Result := Old or Change;
+  Result := Registers.GetByIndex8(ModRM.Reg) or ReadRM8(ModRM);
   Registers.SetByIndex8(ModRM.Reg, Result);
   Registers.Flags.UpdateAfterOr8(Result);
 end;
@@ -1857,12 +1958,10 @@ end;
 procedure TCpu8088.HandleOrReg16RM16;
 var
   ModRM: TModRM;
-  Old, Change, Result: Word;
+  Result: Word;
 begin
   ModRM := FetchModRM;
-  Old := Registers.GetByIndex16(ModRM.Reg);
-  Change := ReadRM16(ModRM);
-  Result := Old or Change;
+  Result := Registers.GetByIndex16(ModRM.Reg) or ReadRM16(ModRM);
   Registers.SetByIndex16(ModRM.Reg, Result);
   Registers.Flags.UpdateAfterOr16(Result);
 end;
@@ -1986,6 +2085,28 @@ begin
   Registers.DS := Pop;
 end;
 
+procedure TCpu8088.HandleAndRM8Reg8;
+var
+  ModRM: TModRM;
+  Result: Byte;
+begin
+  ModRM := FetchModRM;
+  Result := ReadRM8(ModRM) and Registers.GetByIndex8(ModRM.Reg);
+  WriteRM8(ModRM, Result);
+  Registers.Flags.UpdateAfterAnd8(Result);
+end;
+
+procedure TCpu8088.HandleAndRM16Reg16;
+var
+  ModRM: TModRM;
+  Result: Byte;
+begin
+  ModRM := FetchModRM;
+  Result := ReadRM16(ModRM) and Registers.GetByIndex16(ModRM.Reg);
+  WriteRM16(ModRM, Result);
+  Registers.Flags.UpdateAfterAnd16(Result);
+end;
+
 procedure TCpu8088.HandleAndReg8RM8;
 var
   ModRM: TModRM;
@@ -2104,15 +2225,35 @@ begin
   Registers.Flags.UpdateAfterSub16(Old, Change, Result);
 end;
 
+procedure TCpu8088.HandleXorRM8Reg8;
+var
+  ModRM: TModRM;
+  Result: Byte;
+begin
+  ModRM := FetchModRM;
+  Result := ReadRM8(ModRM) xor Registers.GetByIndex8(ModRM.Reg);
+  WriteRM8(ModRM, Result);
+  Registers.Flags.UpdateAfterXor8(Result);
+end;
+
+procedure TCpu8088.HandleXorRM16Reg16;
+var
+  ModRM: TModRM;
+  Result: Word;
+begin
+  ModRM := FetchModRM;
+  Result := ReadRM16(ModRM) xor Registers.GetByIndex16(ModRM.Reg);
+  WriteRM16(ModRM, Result);
+  Registers.Flags.UpdateAfterXor16(Result);
+end;
+
 procedure TCpu8088.HandleXorReg8RM8;
 var
   ModRM: TModRM;
-  Old, Change, Result: Byte;
+  Result: Byte;
 begin
   ModRM := FetchModRM;
-  Old := Registers.GetByIndex8(ModRM.Reg);
-  Change := ReadRM8(ModRM);
-  Result := Old xor Change;
+  Result := Registers.GetByIndex8(ModRM.Reg) xor ReadRM8(ModRM);
   Registers.SetByIndex8(ModRM.Reg, Result);
   Registers.Flags.UpdateAfterXor8(Result);
 end;
@@ -2120,12 +2261,10 @@ end;
 procedure TCpu8088.HandleXorReg16RM16;
 var
   ModRM: TModRM;
-  Old, Change, Result: Word;
+  Result: Word;
 begin
   ModRM := FetchModRM;
-  Old := Registers.GetByIndex16(ModRM.Reg);
-  Change := ReadRM16(ModRM);
-  Result := Old xor Change;
+  Result := Registers.GetByIndex16(ModRM.Reg) xor ReadRM16(ModRM);
   Registers.SetByIndex16(ModRM.Reg, Result);
   Registers.Flags.UpdateAfterXor16(Result);
 end;
@@ -2352,6 +2491,7 @@ begin
   case ModRM.Reg of
     0: AddRM8Imm8(ModRM, Imm);
     4: AndRM8Imm8(ModRM, Imm);
+    5: SubRM8Imm8(ModRM, Imm);
     7: Cmp8(ReadRM8(ModRm), Imm);
   else
     raise Exception.CreateFmt('Not implemented: %d', [ModRM.Reg]);
@@ -2369,6 +2509,7 @@ begin
   case ModRM.Reg of
     0: AddRM16Imm16(ModRM, Imm);
     4: AndRM16Imm16(ModRM, Imm);
+    5: SubRM16Imm16(ModRM, Imm);
     7: Cmp8(ReadRM16(ModRm), Imm);
   else
     raise Exception.CreateFmt('Not implemented: %d', [ModRM.Reg]);
@@ -2386,10 +2527,51 @@ begin
   case ModRM.Reg of
     0: AddRM16Imm16(ModRM, Imm);
     4: AndRM16Imm16(ModRM, Imm);
+    5: SubRM16Imm16(ModRM, Imm);
     7: Cmp8(ReadRM16(ModRm), Imm);
   else
     raise Exception.CreateFmt('Not implemented: %d', [ModRM.Reg]);
   end;
+end;
+
+procedure TCpu8088.HandleTestReg8RM8;
+var
+  ModRM: TModRM;
+begin
+  ModRM := FetchModRM;
+  Registers.Flags.UpdateAfterAnd8(
+    Registers.GetByIndex8(ModRM.Reg) and ReadRM8(ModRM));
+end;
+
+procedure TCpu8088.HandleTestReg16RM16;
+var
+  ModRM: TModRM;
+begin
+  ModRM := FetchModRM;
+  Registers.Flags.UpdateAfterAnd16(
+    Registers.GetByIndex16(ModRM.Reg) and ReadRM16(ModRM));
+end;
+
+procedure TCpu8088.HandleXchgReg8RM8;
+var
+  ModRM: TModRM;
+  Temp: Byte;
+begin
+  ModRM := FetchModRM;
+  Temp := Registers.GetByIndex8(ModRM.Reg);
+  Registers.SetByIndex8(ModRM.Reg, ReadRM8(ModRM));
+  WriteRM8(ModRM, Temp);
+end;
+
+procedure TCpu8088.HandleXchgReg16RM16;
+var
+  ModRM: TModRM;
+  Temp: Word;
+begin
+  ModRM := FetchModRM;
+  Temp := Registers.GetByIndex16(ModRM.Reg);
+  Registers.SetByIndex16(ModRM.Reg, ReadRM16(ModRM));
+  WriteRM16(ModRM, Temp);
 end;
 
 procedure TCpu8088.HandleSbbRM8Reg8;
@@ -2602,6 +2784,28 @@ begin
   Registers.SI := Registers.SI + IfThen(Registers.Flags.DF, -2, 2);
 end;
 
+procedure TCpu8088.HandleScasb;
+var
+  Result: Int16;
+  Change: Byte;
+begin
+  Change := ReadMemoryByte(Registers.ES, Registers.DI);
+  Result := Registers.AL - Change;
+  Registers.DI := Registers.DI + IfThen(Registers.Flags.DF, -1, 1);
+  Registers.Flags.UpdateAfterSub8(Registers.AL, Change, Result);
+end;
+
+procedure TCpu8088.HandleScasw;
+var
+  Result: Int32;
+  Change: Word;
+begin
+  Change := ReadMemoryWord(Registers.ES, Registers.DI);
+  Result := Registers.AX - Change;
+  Registers.DI := Registers.DI + IfThen(Registers.Flags.DF, -2, 2);
+  Registers.Flags.UpdateAfterSub16(Registers.AX, Change, Result);
+end;
+
 procedure TCpu8088.HandleMovReg8Imm8;
 begin
   Registers.SetByIndex8(FCurrentInstruction.OpCode and $07, FetchCodeByte);
@@ -2796,6 +3000,7 @@ var
 begin
   ModRM := FetchModRM;
   case ModRM.Reg of
+    1: RorRM8Const1(ModRM);
     4: ShlRM8Const1(ModRM);
     5: ShrRM8Const1(ModRM);
     7: SarRM8Const1(ModRM);
@@ -2810,8 +3015,9 @@ var
 begin
   ModRM := FetchModRM;
   case ModRM.Reg of
+    1: RorRM16Const1(ModRM);
     4: ShlRM16Const1(ModRM);
-    5: ShrRM16Const1(ModRm);
+    5: ShrRM16Const1(ModRM);
     7: SarRM16Const1(ModRM);
   else
     raise Exception.CreateFmt('Not implemented: %d', [ModRM.Reg]);
@@ -2849,6 +3055,25 @@ end;
 procedure TCpu8088.HandleXlat;
 begin
   Registers.AL := ReadMemoryByte(DataSegment, Registers.BX + Registers.AL);
+end;
+
+procedure TCpu8088.HandleLoope;
+var
+  Displacement: Int8;
+begin
+  Displacement := Int8(FetchCodeByte);
+  Registers.CX := Registers.CX - 1;
+  if (Registers.CX <> 0) and Registers.Flags.ZF then JumpShort(Displacement);
+end;
+
+procedure TCpu8088.HandleLoopne;
+var
+  Displacement: Int8;
+begin
+  Displacement := Int8(FetchCodeByte);
+  Registers.CX := Registers.CX - 1;
+  if (Registers.CX <> 0) and
+    not Registers.Flags.ZF then JumpShort(Displacement);
 end;
 
 procedure TCpu8088.HandleLoop;
@@ -3020,6 +3245,44 @@ begin
   Result := ReadRM8(AModRM) and AImm;
   WriteRM8(AModRM, Result);
   Registers.Flags.UpdateAfterAnd8(Result);
+end;
+
+procedure TCpu8088.AndRM8Reg8(AModRM: TModRM);
+begin
+
+end;
+
+procedure TCpu8088.AndRM16Reg16(AModRM: TModRM);
+begin
+
+end;
+
+procedure TCpu8088.SubRM16Imm16(AModRM: TModRM; AImm: Word);
+var
+  ModRM: TModRM;
+  Immediate, Old: Word;
+  Result: Int32;
+begin
+  ModRM := FetchModRM;
+  Old := ReadRM16(ModRM);
+  Immediate := FetchCodeWord;
+  Result := Old - Immediate;
+  WriteRM16(ModRM, Word(Result));
+  Registers.Flags.UpdateAfterSub16(Old, Immediate, Result);
+end;
+
+procedure TCpu8088.SubRM8Imm8(AModRM: TModRM; AImm: Byte);
+var
+  ModRM: TModRM;
+  Immediate, Old: Byte;
+  Result: Int16;
+begin
+  ModRM := FetchModRM;
+  Old := ReadRM8(ModRM);
+  Immediate := FetchCodeWord;
+  Result := Old - Immediate;
+  WriteRM8(ModRM, Byte(Result));
+  Registers.Flags.UpdateAfterSub8(Old, Immediate, Result);
 end;
 
 procedure TCpu8088.AndRM16Imm16(AModRM: TModRM; AImm: Word);
@@ -3244,6 +3507,26 @@ begin
 
   WriteRM16(AModRM, Value);
   Registers.Flags.UpdateAfterSar16(Value, LastShiftedOut <> 0);
+end;
+
+procedure TCpu8088.RorRM8Const1(AModRM: TModRM);
+var
+  Old, Result: Byte;
+begin
+  Old := ReadRM8(AModRM);
+  Result := (Old shr 1) or ((Old and 1) shr 7);
+  WriteRM8(AModRM, Result);
+  Registers.Flags.UpdateAfterRor8(Old, 1, Result);
+end;
+
+procedure TCpu8088.RorRM16Const1(AModRM: TModRM);
+var
+  Old, Result: Word;
+begin
+  Old := ReadRM16(AModRM);
+  Result := (Old shr 1) or ((Old and 1) shr 15);
+  WriteRM16(AModRM, Result);
+  Registers.Flags.UpdateAfterRor16(Old, 1, Result);
 end;
 
 procedure TCpu8088.SarRM8CL(AModRM: TModRM);

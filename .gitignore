@@ -4,5 +4,6 @@ backup/
 *.o
 *.bak
 *.bin
+*.BIN
 *.log
 *.ppu
