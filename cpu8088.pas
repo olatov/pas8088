@@ -1,7 +1,6 @@
 unit Cpu8088;
 
 {$mode ObjFPC}{$H+}
-{$interfaces CORBA}
 {$R-}
 {$Inline on}
 

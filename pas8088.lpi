@@ -132,6 +132,11 @@
         <IsPartOfProject Value="True"/>
         <UnitName Value="Debugger"/>
       </Unit>
+      <Unit>
+        <Filename Value="keyboard.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Keyboard"/>
+      </Unit>
     </Units>
   </ProjectOptions>
   <CompilerOptions>

@@ -6,15 +6,18 @@ uses
   {$IFDEF UNIX}
   //cthreads,
   {$ENDIF}
-  Classes, SysUtils, StrUtils, Math, StreamEx, bufstream,
-  RayLib, RayMath,
-  Cpu8088, Memory, IO, Machine, VideoController, Interrups, Hardware, Debugger;
+  Classes, SysUtils, StrUtils, Math, StreamEx, bufstream, RayLib, RayMath,
+  Cpu8088, Memory, IO, Machine, VideoController, Interrups, Hardware, Debugger,
+  Keyboard;
 
 const
   FPS = 50;
   Cycles = 1000000 div FPS;
+  //Cycles = 2;
   BiosFile = 'poisk_1991.bin';
   //BiosFile = 'test.bin';
+
+  DBG = False;
 
   RamAddress   = $00000;
   BiosAddress  = $FE000;
@@ -37,7 +40,9 @@ type
     FDebugger: TDebugger;
     FLogWriter: TStreamWriter;
     FDumpStream: TStream;
+    FDebug: Boolean;
     Speed: Integer;
+    Keyboard: TKeyboard;
     constructor Create;
     destructor Destroy; override;
     procedure Run;
@@ -53,6 +58,8 @@ var
   BiosStream: TStream;
   Ram, VideoRam: TRamMemoryBlock;
   NmiTrigger: TNmiTrigger;
+  BasicRom: TRomMemoryBlock;
+  TmpStream: TFileStream;
 begin
   Result := TMachine.Create(Nil);
 
@@ -80,6 +87,16 @@ begin
   Result.Video.NmiTrigger := NmiTrigger;
   Result.Video.NmiTrigger.AttachCpu(Result.Cpu);
   Result.IOBus.AttachDevice(NmiTrigger);
+
+  { Keyboard }
+  Keyboard := TKeyboard.Create(Result);
+  Result.IOBus.AttachDevice(Keyboard);
+
+  BasicRom := TRomMemoryBlock.Create(Result, 1024 * 32, $C0000);
+  Result.InstallMemory(BasicRom);
+  TmpStream := TFileStream.Create('BASICC11.BIN', fmOpenRead);
+  BasicRom.LoadFromStream(TmpStream);
+  TmpStream.Free;
 
   Result.Initialize;
 
@@ -116,6 +133,8 @@ var
   Tmp: Single = 400.0;
 
 begin
+  FDebug := DBG;
+
   SetConfigFlags(FLAG_WINDOW_RESIZABLE);
   InitWindow(800, 600, 'Poisk');
   SetTargetFPS(FPS);
@@ -130,6 +149,7 @@ begin
   Computer.Cpu.OnAfterInstruction := @OnInstruction;
 
   FDebugger.LoadProgram(BiosFile, BiosAddress);
+  FDebugger.LoadProgram('BASICC11.BIN', $C0000);
 
   ScanlineShader := LoadShader(Nil, TextFormat('scanlines.fs'));
 
@@ -138,17 +158,23 @@ begin
 
   while not WindowShouldClose do
   begin
-    if IsKeyPressed(KEY_F) then ToggleBorderlessWindowed;
+    Keyboard[keyEsc] := IsKeyDown(KEY_ESCAPE);
+    Keyboard[keyEnter] := IsKeyDown(KEY_ENTER);
+    Keyboard[keyF1] := IsKeyDown(KEY_F1);
+    Keyboard[keyF2] := IsKeyDown(KEY_F2);
+    Keyboard[keyE] := IsKeyDown(KEY_E);
 
     try
-      Computer.Run(Cycles);
-      Computer.Cpu.RaiseHardwareInterrupt(8);  { Todo: invoke by TIMER0 }
+      Computer.Run(Cycles div 2);
+      Computer.Cpu.RaiseHardwareInterrupt($0E);  { Todo: TIMER1 }
+      Computer.Run(Cycles div 2);
+      Computer.Cpu.RaiseHardwareInterrupt($08);  { Todo: TIMER0 }
     except
       on E: Exception do
         begin
           Writeln('*** ERROR: ', E.Message, ' ***');
-          Computer.Cpu.DumpCurrentInstruction;
-          break;
+          Writeln(Computer.Cpu.DumpCurrentInstruction);
+          Break;
         end;
     end;
 
@@ -211,6 +237,10 @@ var
   I: Integer;
 begin
   //Writeln(Format('INT %.x', [ANumber]));
+  if ANumber = $10 then
+  begin
+    //if Cpu.Registers.AH = $0E then Writeln('Prints');
+  end;
   Result := False;
 end;
 
@@ -242,13 +272,16 @@ begin
 
   //FDumpStream.Write(Frame, SizeOf(Frame));
 
-{
-  FLogWriter.WriteLine('%.4x:%.4x | %s',
+  //if (AInstruction.CS = $C000) then FDebug := True;
+
+  if FDebug then
+    WriteLn(Format('%.4x:%.4x | %-24s | %s ',
     [
       AInstruction.CS, AInstruction.IP,
-      FDebugger.FindLine(AInstruction.CS, AInstruction.IP)
-    ]);
-}
+      FDebugger.FindLine(AInstruction.CS, AInstruction.IP),
+      TCpu8088(ASender).DumpCurrentInstruction
+    ]));
+
 end;
 
 var

@@ -1,6 +1,7 @@
 unit Debugger;
 
 {$mode ObjFPC}{$H+}
+{$R-}
 
 interface
 
