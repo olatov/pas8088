@@ -17,6 +17,7 @@ type
   ICpu = interface
     procedure Tick;
     procedure RaiseNmi;
+    procedure RaiseHardwareInterrupt(ANumber: Byte);
   end;
 
   IMemoryBus = interface
@@ -62,7 +63,7 @@ type
     procedure InvokeRead(ADevice: IIOBusDevice; AAddress: Word; out AData: Byte);
   end;
 
-  INmiGate = interface
+  INmiTrigger = interface
     ['{7F4DA08F-DA98-4F0A-B45B-B40A53304387}']
     procedure AttachCpu(ACpu: ICpu);
     procedure RaiseNmi;

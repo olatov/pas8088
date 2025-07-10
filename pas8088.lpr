@@ -12,7 +12,7 @@ uses
 
 const
   FPS = 50;
-  Cycles = 20000;
+  Cycles = 10000;
 
 type
 
@@ -34,7 +34,7 @@ var
   BiosRom: TRomMemoryBlock;
   BiosStream: TStream;
   Ram, VideoRam: TRamMemoryBlock;
-  NmiGate: TNmiGate;
+  NmiTrigger: TNmiTrigger;
 begin
   Result := TMachine.Create(Nil);
 
@@ -58,10 +58,10 @@ begin
 
   { Video }
   Result.InstallVideo(TVideoController.Create(Result));
-  NmiGate := TNmiGate.Create(Result);
-  Result.Video.NmiGate := NmiGate;
+  NmiTrigger := TNmiTrigger.Create(Result);
+  Result.Video.NmiGate := NmiTrigger;
   Result.Video.NmiGate.AttachCpu(Result.Cpu);
-  Result.IOBus.AttachDevice(NmiGate);
+  Result.IOBus.AttachDevice(NmiTrigger);
 
   Result.Initialize;
 
@@ -76,10 +76,9 @@ end;
 procedure TApp.Run;
 var
   Computer: TMachine;
-  I: Integer;
 
 begin
-  //SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+  SetConfigFlags(FLAG_WINDOW_RESIZABLE);
   InitWindow(800, 600, 'Poisk');
   SetTargetFPS(FPS);
 
@@ -96,12 +95,8 @@ begin
     if IsKeyPressed(KEY_F) then ToggleBorderlessWindowed;
 
     try
-      I := 0;
-      while I < Speed do
-      begin
-        Inc(I);
-        Computer.Tick;
-      end;
+      Computer.Run(Cycles);
+      Computer.Cpu.RaiseHardwareInterrupt(8);
     except
       on E: Exception do
         begin
@@ -183,7 +178,6 @@ begin
       end;
     $19:
       begin
-        {
         TestProgram := TBytesStream.Create;
         TestProgram.LoadFromFile('test.bin');
         for I := 0 To TestProgram.Size - 1 do
@@ -193,9 +187,8 @@ begin
 
         Cpu.Registers.CS := $1000;
         Cpu.Registers.IP := $0000;
-        //Speed := 1;
+        Speed := 1;
         Result := True;
-        }
       end;
   end;
   Result := False;

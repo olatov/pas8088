@@ -44,8 +44,9 @@ var
     { Palette 1, high intensity [10] }
     (CGADarkGray, CGABrightCyan, CGABrightMagenta, CGAWhite),
 
-    { Palette 0, high intensity [11] }
-    (CGADarkGray, CGABrightGreen, CGABrightRed, CGAYellow),
+    { Palette 0, high intensity [11], possibly incorrect on Poisk }
+    { (CGADarkGray, CGABrightGreen, CGABrightRed, CGAYellow), }
+    (CGADarkGray, CGABrightCyan, CGABrightMagenta, CGAWhite),
 
     { Hi res BW pallette }
     (CGABlack, CGAWhite, CGABlack, CGABlack)
@@ -63,6 +64,7 @@ type
   private
     FBackgroundColor: TColor;
     FGetActivePallette: TCGAPallette;
+    FActivePalletteIndex: Byte;
     FLatch: array[$28..$2A] of Byte;
     FVideoModeSelector: Byte;
     function GetActiveMode: TVideoMode;
@@ -73,7 +75,7 @@ type
   private
     FIOBus: IIOBus;
     FMemoryBus: IMemoryBus;
-    FNmiGate: INmiGate;
+    FNmiTrigger: INmiTrigger;
     function GetScanlines(ANumber: TVideoRows): TScanline;
     property BackgroundColor: TColor read FBackgroundColor write SetBackgroundColor;
     property ActivePallette: TCGAPallette read GetActivePallette;
@@ -81,7 +83,7 @@ type
     property Segment: Word read GetSegment;
     property BitsPerPixel: Byte read GetBitsPerPixel;
   public
-    property NmiGate: INmiGate read FNmiGate write FNmiGate;
+    property NmiGate: INmiTrigger read FNmiTrigger write FNmiTrigger;
     property ScanLines[ANumber: TVideoRows]: TScanLine read GetScanLines;
 
     { Memory bus device API }
@@ -125,10 +127,11 @@ end;
 
 function TVideoController.GetActivePallette: TCGAPallette;
 begin
-  if BitsPerPixel = 2 then
-    Result := CGAPallettes[2]
+  case BitsPerPixel of
+    2: Result := CGAPallettes[FActivePalletteIndex]
   else
     Result := CGAPallettes[4];
+  end;
 end;
 
 function TVideoController.GetActiveMode: TVideoMode;
@@ -268,16 +271,21 @@ procedure TVideoController.OnIOWrite(Sender: IIOBusDevice; AAddress: Word;
 begin
   case AAddress of
     $68:
-      FVideoModeSelector :=
-        (FVideoModeSelector and $F3) or ((AData shr 4) and $0C);
+      begin
+        FVideoModeSelector :=
+          (FVideoModeSelector and $F3) or ((AData shr 4) and $0C);
+
+        if (AData and (1 shl 6)) <> 0 then
+          FActivePalletteIndex := 3
+        else
+          FActivePalletteIndex := (AData shl 4) and $03;
+      end;
     $6A:
-      FVideoModeSelector :=
-        (FVideoModeSelector and $FC) or ((AData shr 6) and $03);
+      begin
+        FVideoModeSelector :=
+          (FVideoModeSelector and $FC) or ((AData shr 6) and $03);
+      end;
   end;
-  {
-                  ((_ports[0x68] >> 4) & 0b1100) |
-                  ((_ports[0x6a] >> 6) & 0b0011);
-  }
 end;
 
 end.

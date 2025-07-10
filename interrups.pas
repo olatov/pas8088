@@ -9,9 +9,9 @@ uses
 
 type
 
-  { TNmiGate }
+  { TNmiTrigger }
 
-  TNmiGate = class(TComponent, INmiGate, IIOBusDevice)
+  TNmiTrigger = class(TComponent, INmiTrigger, IIOBusDevice)
   private
     FCpu: ICpu;
     FIOBus: IIOBus;
@@ -34,51 +34,51 @@ type
 
 implementation
 
-{ TNmiGate }
+{ TNmiTrigger }
 
-procedure TNmiGate.SetCpu(AValue: ICpu);
+procedure TNmiTrigger.SetCpu(AValue: ICpu);
 begin
   FCpu := AValue;
 end;
 
-procedure TNmiGate.AttachCpu(ACpu: ICpu);
+procedure TNmiTrigger.AttachCpu(ACpu: ICpu);
 begin
   Cpu := ACpu;
 end;
 
-procedure TNmiGate.RaiseNmi;
+procedure TNmiTrigger.RaiseNmi;
 begin
   if Assigned(Cpu) and FOutputEnabled then
     Cpu.RaiseNmi;
 end;
 
-function TNmiGate.GetIOBus: IIOBus;
+function TNmiTrigger.GetIOBus: IIOBus;
 begin
   Result := FIOBus;
 end;
 
-procedure TNmiGate.SetIOBus(AValue: IIOBus);
+procedure TNmiTrigger.SetIOBus(AValue: IIOBus);
 begin
   FIOBus := AValue;
 end;
 
-procedure TNmiGate.WriteIOByte(AAddress: Word; AData: Byte);
+procedure TNmiTrigger.WriteIOByte(AAddress: Word; AData: Byte);
 begin
 
 end;
 
-function TNmiGate.ReadIOByte(AAddress: Word): Byte;
+function TNmiTrigger.ReadIOByte(AAddress: Word): Byte;
 begin
 
 end;
 
-function TNmiGate.OnIORead(ADevice: IIOBusDevice; AAddress: Word; out
+function TNmiTrigger.OnIORead(ADevice: IIOBusDevice; AAddress: Word; out
   AData: Byte): Boolean;
 begin
   Result := False;
 end;
 
-procedure TNmiGate.OnIOWrite(Sender: IIOBusDevice; AAddress: Word; AData: Byte);
+procedure TNmiTrigger.OnIOWrite(Sender: IIOBusDevice; AAddress: Word; AData: Byte);
 begin
   if AAddress = $68 then
     { TODO: double check }

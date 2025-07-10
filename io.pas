@@ -6,7 +6,7 @@ interface
 
 uses
   Classes, SysUtils,
-  Hardware, Cpu8088;
+  Hardware;
 
 type
 

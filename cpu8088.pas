@@ -236,9 +236,6 @@ type
     function DataSegment: Word;
     function ExtraSegment: Word;
 
-    procedure RaiseHardwareInterrupt(ANumber: Byte);
-    procedure RaiseNmi;
-
     function ReadMemoryWord(ASegment, AOffset: Word): Word;
     function FetchCodeByte: Byte;
     function FetchCodeWord: Word;
@@ -460,6 +457,8 @@ type
     property OnBeforeInstruction: TNotifyEvent read FOnBeforeInstruction write SetOnBeforeInstruction;
     property OnAfterInstruction: TInstructionNotifyEvent read FOnAfterInstruction write SetOnAfterInstruction;
     property InterruptHook: TInteruptHook read FInterruptHook write SetInterruptHook;
+    procedure RaiseNmi;
+    procedure RaiseHardwareInterrupt(ANumber: Byte);
     constructor Create(AOwner: TComponent); override;
     procedure Reset;
     procedure Tick;
