@@ -408,6 +408,8 @@ type
     procedure HandleMovDisp16AX;  { $A3 }
     procedure HandleMovsb;  { $A4 }
     procedure HandleMovsw;  { $A5 }
+    procedure HandleCmpsb;  { $A6 }
+    procedure HandleCmpsw;  { $A7 }
     procedure HandleTestALImm8;  { $A8 }
     procedure HandleTestAXImm16;  { $A9 }
     procedure HandleStosb;  { $AA }
@@ -1729,8 +1731,8 @@ begin
       $A3:      FInstructionHandlers[I] := @HandleMovDisp16AX;
       $A4:      FInstructionHandlers[I] := @HandleMovsb;
       $A5:      FInstructionHandlers[I] := @HandleMovsw;
-      { $A6 Movsw }
-      { $A7 Cmpsb }
+      $A6:      FInstructionHandlers[I] := @HandleCmpsb;
+      $A7:      FInstructionHandlers[I] := @HandleCmpsw;
       $A8:      FInstructionHandlers[I] := @HandleTestALImm8;
       $A9:      FInstructionHandlers[I] := @HandleTestAXImm16;
       $AA:      FInstructionHandlers[I] := @HandleStosb;
@@ -2773,6 +2775,28 @@ begin
     Registers.SI := Registers.SI - 2;
     Registers.DI := Registers.DI - 2;
   end;
+end;
+
+procedure TCpu8088.HandleCmpsb;
+var
+  Delta: array[False..True] of Int8 = (1, -1);
+begin
+  Cmp8(
+    ReadMemoryByte(DataSegment, Registers.SI),
+    ReadMemoryByte(Registers.ES, Registers.DI));
+  Registers.SI := Registers.SI + Delta[Registers.flags.DF];
+  Registers.DI := Registers.DI + Delta[Registers.Flags.DF];
+end;
+
+procedure TCpu8088.HandleCmpsw;
+var
+  Delta: array[False..True] of Int8 = (2, -2);
+begin
+  Cmp16(
+    ReadMemoryWord(DataSegment, Registers.SI),
+    ReadMemoryWord(Registers.ES, Registers.DI));
+  Registers.SI := Registers.SI + Delta[Registers.flags.DF];
+  Registers.DI := Registers.DI + Delta[Registers.Flags.DF];
 end;
 
 procedure TCpu8088.HandleTestALImm8;
