@@ -16,7 +16,7 @@ type
     type TKey = (
       keyEsc, keyEnter, keySpace,
       keyF1, KeyF2, keyF3, KeyF4, keyF5, KeyF6, keyF7, keyF8, keyF9, keyF10,
-      keyE
+      keyE, keyW, keyS, keyA, keyD
     );
   private
     FIOBus: IIOBus;
@@ -37,7 +37,7 @@ type
     procedure WriteIOByte(AAddress: Word; AData: Byte);
     function ReadIOByte(AAddress: Word): Byte;
     property IOBus: IIOBus read GetIOBus write SetIOBus;
-    function OnIORead(ADevice: IIOBusDevice; AAddress: Word; out AData: Byte): Boolean;
+    function OnIORead(ADevice: IIOBusDevice; AAddress: Word; var AData: Byte): Boolean;
     procedure OnIOWrite(Sender: IIOBusDevice; AAddress: Word; AData: Byte);
   end;
 
@@ -85,7 +85,7 @@ begin
 end;
 
 function TKeyboard.OnIORead(
-  ADevice: IIOBusDevice; AAddress: Word; out AData: Byte): Boolean;
+  ADevice: IIOBusDevice; AAddress: Word; var AData: Byte): Boolean;
 begin
   case AAddress of
     $60: AData := ScanCode;
@@ -95,20 +95,17 @@ begin
         AData := 0;
         if ScanCode = $FF then Exit;
 
-        if Self[keyEnter] and (ActiveRow = 0) then
-          AData := AData or (1 shl 5);
+        if Self[keyEnter] and (ActiveRow = 0) then AData := AData or (1 shl 5);
+        if Self[keyEsc] and (ActiveRow = 4) then  AData := AData or (1 shl 5);
+        if Self[keyF1] and (ActiveRow = 3) then AData := AData or (1 shl 4);
+        if Self[keyF2] and (ActiveRow = 3) then AData := AData or (1 shl 0);
 
-        if FKeyState[keyEsc] and (ActiveRow = 4) then
-          AData := AData or (1 shl 5);
+        if Self[keyE] and (ActiveRow = 4) then AData := AData or (1 shl 0);
 
-        if FKeyState[keyF1] and (ActiveRow = 3) then
-          AData := AData or (1 shl 4);
-
-        if FKeyState[keyF2] and (ActiveRow = 3) then
-          AData := AData or (1 shl 0);
-
-        if FKeyState[keyE] and (ActiveRow = 4) then
-          AData := AData or (1 shl 0);
+        if Self[keyW] and (ActiveRow = 4) then AData := AData or (1 shl 4);
+        if Self[keyA] and (ActiveRow = 4) then AData := AData or (1 shl 6);
+        if Self[keyS] and (ActiveRow = 2) then AData := AData or (1 shl 5);
+        if Self[keyD] and (ActiveRow = 2) then AData := AData or (1 shl 4);
 
         AData := not AData;
       end;
