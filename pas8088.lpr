@@ -134,7 +134,7 @@ begin
 
     try
       Computer.Run(Cycles);
-      Computer.Cpu.RaiseHardwareInterrupt(8);
+      Computer.Cpu.RaiseHardwareInterrupt(8);  { Todo: invoke by TIMER0 }
     except
       on E: Exception do
         begin
