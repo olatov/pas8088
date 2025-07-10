@@ -37,7 +37,7 @@ type
     procedure WriteIOByte(AAddress: Word; AData: Byte);
     function ReadIOByte(AAddress: Word): Byte;
     property IOBus: IIOBus read GetIOBus write SetIOBus;
-    function OnIORead(ADevice: IIOBusDevice; AAddress: Word; var AData: Byte): Boolean;
+    function OnIORead(ADevice: IIOBusDevice; AAddress: Word; out AData: Byte): Boolean;
     procedure OnIOWrite(Sender: IIOBusDevice; AAddress: Word; AData: Byte);
   end;
 
@@ -84,8 +84,8 @@ begin
   { n / a }
 end;
 
-function TKeyboard.OnIORead(
-  ADevice: IIOBusDevice; AAddress: Word; var AData: Byte): Boolean;
+function TKeyboard.OnIORead(ADevice: IIOBusDevice; AAddress: Word; out
+  AData: Byte): Boolean;
 begin
   case AAddress of
     $60: AData := ScanCode;
