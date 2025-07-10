@@ -6,22 +6,40 @@ uses
   {$IFDEF UNIX}
   //cthreads,
   {$ENDIF}
-  Classes, SysUtils, StrUtils, Math, IConvEnc,
+  Classes, SysUtils, StrUtils, Math, StreamEx, bufstream,
   RayLib, RayMath,
-  Cpu8088, Memory, IO, Machine, VideoController, Interrups, Hardware;
+  Cpu8088, Memory, IO, Machine, VideoController, Interrups, Hardware, Debugger;
 
 const
   FPS = 50;
-  Cycles = 10000;
+  Cycles = 20000;
+  BiosFile = 'poisk_1991.bin';
+  //BiosFile = 'test.bin';
+
+  RamAddress   = $00000;
+  BiosAddress  = $FE000;
+  VideoAddress = $B8000;
 
 type
+  TDumpFrame = record
+    PhysicalAddress: UInt32;
+    CodeLenth: Byte;
+    CodeBytes: array[0..5] of Byte;
+    AX, BX, CX, DX, BP, SP, SI, DI,
+    CS, DS, SS, ES, IP, Flags: Word;
+  end;
 
   { TApp }
 
   TApp = class
   public
     Target: TRenderTexture;
+    FDebugger: TDebugger;
+    FLogWriter: TStreamWriter;
+    FDumpStream: TStream;
     Speed: Integer;
+    constructor Create;
+    destructor Destroy; override;
     procedure Run;
     procedure RenderDisplay(AVideo: TVideoController);
     function BuildMachine: TMachine;
@@ -47,13 +65,13 @@ begin
   { RAM / ROM }
   Result.InstallMemoryBus(TMemoryBus.Create(Result));
 
-  Ram := TRamMemoryBlock.Create(Result, 1024 * 608, $0);
+  Ram := TRamMemoryBlock.Create(Result, 1024 * 608, RamAddress);
   Result.InstallMemory(Ram);
 
-  BiosRom := TRomMemoryBlock.Create(Result, 1024 * 8, $FE000);
+  BiosRom := TRomMemoryBlock.Create(Result, 1024 * 8, BiosAddress);
   Result.InstallMemory(BiosRom);
 
-  VideoRam := TRamMemoryBlock.Create(Result, 1024 * 32, $B8000);
+  VideoRam := TRamMemoryBlock.Create(Result, 1024 * 32, VideoAddress);
   Result.InstallMemory(VideoRam);
 
   { Video }
@@ -65,12 +83,30 @@ begin
 
   Result.Initialize;
 
-  BiosStream := TFileStream.Create('poisk_1991.bin', fmOpenRead);
+  //BiosStream := TFileStream.Create('poisk_1991.bin', fmOpenRead);
+  BiosStream := TFileStream.Create(BiosFile, fmOpenRead);
   try
     BiosRom.LoadFromStream(BiosStream);
   finally
     FreeAndNil(BiosStream);
   end;
+end;
+
+constructor TApp.Create;
+begin
+  FDebugger := TDebugger.Create;
+  FLogWriter := TStreamWriter.Create('/tmp/comp.log', False, TEncoding.UTF8, 16384);
+  FDumpStream := TWriteBufStream.Create(
+    TFileStream.Create('/tmp/comp.dump', fmCreate));
+  TWriteBufStream(FDumpStream).SourceOwner := True;
+end;
+
+destructor TApp.Destroy;
+begin
+  FreeAndNil(FDebugger);
+  FreeAndNil(FLogWriter);
+  FreeAndNil(FDumpStream);
+  inherited Destroy;
 end;
 
 procedure TApp.Run;
@@ -89,6 +125,8 @@ begin
 
   Computer.Cpu.InterruptHook := @InterruptHook;
   Computer.Cpu.OnAfterInstruction := @OnInstruction;
+
+  FDebugger.LoadProgram(BiosFile, BiosAddress);
 
   while not WindowShouldClose do
   begin
@@ -165,39 +203,44 @@ var
   I: Integer;
 begin
   //Writeln(Format('INT %.x', [ANumber]));
-  case ANumber of
-    $10:
-      begin
-        case Cpu.Registers.AH of
-          $0E: { teletype }
-            begin
-              Iconvert(Char(Cpu.Registers.AL), Message, 'cp866', 'utf-8');
-              //Write(Message);
-            end;
-        end;
-      end;
-    $19:
-      begin
-        TestProgram := TBytesStream.Create;
-        TestProgram.LoadFromFile('test.bin');
-        for I := 0 To TestProgram.Size - 1 do
-          Cpu.MemoryBus.InvokeWrite(
-            Nil, $10000 + I, TestProgram.ReadByte);
-        TestProgram.Free;
-
-        Cpu.Registers.CS := $1000;
-        Cpu.Registers.IP := $0000;
-        Speed := 1;
-        Result := True;
-      end;
-  end;
   Result := False;
 end;
 
 procedure TApp.OnInstruction(ASender: TObject; AInstruction: TInstruction);
+var
+  Line: String;
+  Data: Byte;
+  Frame: TDumpFrame;
+  Cpu: TCpu8088 absolute ASender;
 begin
-  if Speed < 100 then
-    (ASender as TCpu8088).DumpCurrentInstruction;
+  Frame.PhysicalAddress := (AInstruction.CS shl 4) and AInstruction.IP;
+  Frame.CodeLenth := AInstruction.Length;
+  Frame.CodeBytes := AInstruction.Code;
+
+  Frame.AX := Cpu.Registers.AX;
+  Frame.BX := Cpu.Registers.BX;
+  Frame.CX := Cpu.Registers.CX;
+  Frame.DX := Cpu.Registers.DX;
+  Frame.BP := Cpu.Registers.BP;
+  Frame.SP := Cpu.Registers.SP;
+  Frame.SI := Cpu.Registers.SI;
+  Frame.DI := Cpu.Registers.DI;
+  Frame.CS := Cpu.Registers.CS;
+  Frame.DS := Cpu.Registers.DS;
+  Frame.SS := Cpu.Registers.SS;
+  Frame.ES := Cpu.Registers.ES;
+  Frame.IP := Cpu.Registers.IP;
+  Frame.Flags := Cpu.Registers.Flags.GetWord;
+
+  FDumpStream.Write(Frame, SizeOf(Frame));
+
+{
+  FLogWriter.WriteLine('%.4x:%.4x | %s',
+    [
+      AInstruction.CS, AInstruction.IP,
+      FDebugger.FindLine(AInstruction.CS, AInstruction.IP)
+    ]);
+}
 end;
 
 var

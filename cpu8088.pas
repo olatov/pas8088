@@ -21,7 +21,7 @@ type
     Repetition: (repNone, repRep, repRepE, repRepNE);
     SegmentOverride: (soNone, soCS, soDS, soES, soSS);
     Code: array[0..5] of Byte;
-    Length: Integer;
+    Length: Byte;
     Repeating: Boolean;
   end;
 
@@ -450,7 +450,7 @@ type
     procedure IncRM16(AModRM: TModRM);
     procedure HandleRepetition;
   public
-    procedure DumpCurrentInstruction;
+    function DumpCurrentInstruction: String;
     property Ticks: QWord read FTicks;
     property Halted: Boolean read FHalted;
     property Registers: TRegisters read FRegisters write FRegisters;
@@ -3401,25 +3401,26 @@ begin
   end;
 end;
 
-procedure TCpu8088.DumpCurrentInstruction;
+function TCpu8088.DumpCurrentInstruction: String;
 var
   I: Integer;
   Buf: String = '';
 begin
-  Write(
+  WriteStr(Result,
     Format('%.4x:%.4x | ',
     [FCurrentInstruction.CS, FCurrentInstruction.IP]));
 
   for I := 0 to FCurrentInstruction.Length - 1 do
     Buf := Buf + IntToHex(FCurrentInstruction.Code[I], 2);
 
-  Write(Format('%-10s | AX:%.4x | BX:%.4x | CX:%.4x | DX:%.4x | ' +
-    'SI:%.4x | DI:%.4x | DS:%.4x | ES:%.4x | SS:%.4x',
-    [Buf, Registers.AX, Registers.BX, Registers.CX, Registers.DX,
-      Registers.SI, Registers.DI, Registers.DS, Registers.ES, Registers.SS]));
-
-
-  Writeln;
+  WriteStr(Result,
+    Format(
+      '%-10s | AX:%.4x | BX:%.4x | CX:%.4x | DX:%.4x | ' +
+      'SI:%.4x | DI:%.4x | DS:%.4x | ES:%.4x | SS:%.4x',
+      [
+        Buf, Registers.AX, Registers.BX, Registers.CX, Registers.DX,
+        Registers.SI, Registers.DI, Registers.DS, Registers.ES, Registers.SS
+      ]));
 end;
 
 constructor TCpu8088.Create(AOwner: TComponent);

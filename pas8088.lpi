@@ -127,6 +127,11 @@
         <IsPartOfProject Value="True"/>
         <UnitName Value="Hardware"/>
       </Unit>
+      <Unit>
+        <Filename Value="debugger.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Debugger"/>
+      </Unit>
     </Units>
   </ProjectOptions>
   <CompilerOptions>
