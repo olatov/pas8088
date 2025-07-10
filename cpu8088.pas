@@ -252,6 +252,7 @@ type
     procedure DecRM16(AModRM: TModRM);
     procedure EnterISR(ANumber: Byte);
     procedure ExecuteCurrentInstruction;
+    procedure Push(AValue: Word; ASegment: Word);
     procedure RaiseSoftwareInterrupt(ANumber: Byte);
     function ReadMemoryByte(ASegment, AOffset: Word): Byte;
     procedure WriteMemoryWord(ASegment, AOffset: Word; AData: Word);
@@ -385,7 +386,10 @@ type
     procedure HandleMovRM16Reg16;  { $89 }
     procedure HandleMovReg8RM8;  { $8A }
     procedure HandleMovReg16RM16;  { $8B }
+    procedure HandleMovRM16Sreg;  { $8C }
+    procedure HandleLea;  { $8D }
     procedure HandleMovSRegRM16;  { $8E }
+    procedure HandlePopRM16;  { $8F }
 
     procedure HandleNop;  { $90 }
     procedure HandleXchgReg16;  { $91..$97 }
@@ -1589,9 +1593,14 @@ end;
 
 procedure TCpu8088.Push(AValue: Word);
 begin
+  Push(AValue, StackSegment);
+end;
+
+procedure TCpu8088.Push(AValue: Word; ASegment: Word);
+begin
   Registers.SP := Registers.SP - 2;
-  WriteMemoryByte(StackSegment, Word(Registers.SP + 1), Lo(AValue));
-  WriteMemoryByte(StackSegment, Word(Registers.SP + 2), Hi(AValue));
+  WriteMemoryByte(ASegment, Word(Registers.SP + 1), Lo(AValue));
+  WriteMemoryByte(ASegment, Word(Registers.SP + 2), Hi(AValue));
 end;
 
 function TCpu8088.Pop: Word;
@@ -1700,7 +1709,10 @@ begin
       $89:      FInstructionHandlers[I] := @HandleMovRM16Reg16;
       $8A:      FInstructionHandlers[I] := @HandleMovReg8RM8;
       $8B:      FInstructionHandlers[I] := @HandleMovReg16RM16;
+      $8C:      FInstructionHandlers[I] := @HandleMovRM16Sreg;
+      $8D:      FInstructionHandlers[I] := @HandleLea;
       $8E:      FInstructionHandlers[I] := @HandleMovSRegRM16;
+      $8F:      FInstructionHandlers[I] := @HandlePopRM16;
       $90:      FInstructionHandlers[I] := @HandleNop;
       $91..$97: FInstructionHandlers[I] := @HandleXchgReg16;
       $98:      FInstructionHandlers[I] := @HandleCbw;
@@ -2648,6 +2660,22 @@ begin
   Registers.SetByIndex16(DestIndex, Data);
 end;
 
+procedure TCpu8088.HandleMovRM16Sreg;
+var
+  ModRM: TModRM;
+begin
+  ModRM := FetchModRM;
+  WriteRM16(ModRM, Registers.GetByIndex16(Ord(riES) + ModRM.Reg));
+end;
+
+procedure TCpu8088.HandleLea;
+var
+  ModRM: TModRM;
+begin
+  ModRM := FetchModRM;
+  Registers.SetByIndex16(ModRM.Reg, ModRM.EffectiveAddr);
+end;
+
 procedure TCpu8088.HandleMovSRegRM16;
 var
   Param: TModRM;
@@ -2658,6 +2686,11 @@ begin
   Data := ReadRM16(Param);
   DestIndex := TRegisters.TRegIndex16(Param.Reg + 8);
   Registers.SetByIndex16(DestIndex, Data);
+end;
+
+procedure TCpu8088.HandlePopRM16;
+begin
+  WriteRM16(FetchModRM, Pop);
 end;
 
 procedure TCpu8088.HandleWait;
