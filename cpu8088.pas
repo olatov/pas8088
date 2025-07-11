@@ -1810,9 +1810,6 @@ begin
   Registers.Flags.IF_ := False;
   Registers.Flags.TF := False;
 
-  if ANumber = $B1 then
-    Vector := 0;
-
   Vector := ANumber * 4;
   Registers.CS := ReadMemoryWord(0, Vector + 2);
   Registers.IP := ReadMemoryWord(0, Vector);
@@ -2525,7 +2522,7 @@ begin
     0: AddRM16Imm16(ModRM, Imm);
     4: AndRM16Imm16(ModRM, Imm);
     5: SubRM16Imm16(ModRM, Imm);
-    7: Cmp8(ReadRM16(ModRm), Imm);
+    7: Cmp16(ReadRM16(ModRm), Imm);
   else
     raise Exception.CreateFmt('Not implemented: %d', [ModRM.Reg]);
   end;
@@ -2543,7 +2540,7 @@ begin
     0: AddRM16Imm16(ModRM, Imm);
     4: AndRM16Imm16(ModRM, Imm);
     5: SubRM16Imm16(ModRM, Imm);
-    7: Cmp8(ReadRM16(ModRm), Imm);
+    7: Cmp16(ReadRM16(ModRm), Imm);
   else
     raise Exception.CreateFmt('Not implemented: %d', [ModRM.Reg]);
   end;
@@ -3037,7 +3034,7 @@ var
 begin
   Param := FetchCodeWord;
   Registers.IP := Pop;
-  Registers.CS := Pop;  
+  Registers.CS := Pop;
   Registers.SP := Registers.SP + (2 * Param);
 end;
 
@@ -3204,7 +3201,7 @@ end;
 
 procedure TCpu8088.HandleCallNear;
 var
-  Displacement: Word;
+  Displacement: Int16;
 begin
   Displacement := FetchCodeWord;
   Push(Registers.IP);
