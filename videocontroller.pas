@@ -69,6 +69,42 @@ type
     FActivePalletteIndex: Byte;
     FLatch: array[$28..$2A] of Byte;
     FVideoModeSelector: Byte;
+
+    {
+      0  BGColor
+      1  BGColor
+      2  BGColor
+      3  NMI Disable
+      4  Intensity
+      5  Pal 0/1
+      6  Page
+      7  Hires
+    }
+
+    FPort68Register: bitpacked record
+      BackgroundColor: 0..%111;
+      NmiDisable: 0..%1;
+      Intensity: 0..%1;
+      Pallette: 0..%1;
+      TextMode: 0..%1;
+      HiRes: 0..%1;
+    end;
+
+    {
+      0
+      1
+      2
+      3
+      4
+      5
+      6  VideoMode LoNibble
+      7  VideoMode LoNibble
+    }
+
+    FPort6ARegister: bitpacked record
+      Unused: 0..%111111;
+      VideoModeLoNibble: 0..%11;
+    end;
     function GetActiveMode: TVideoMode;
     function GetActivePallette: TCGAPallette;
     function GetBitsPerPixel: Byte;
@@ -128,9 +164,19 @@ begin
 end;
 
 function TVideoController.GetActivePallette: TCGAPallette;
+var
+  Index: bitpacked record
+    Palette: 0..%1;
+    Intensity: 0..%1;
+    Unused: 0..%111111;
+  end;
 begin
+  Index.Palette := FPort68Register.Pallette;
+  Index.Intensity := FPort68Register.Intensity;
+  Index.Unused := 0;
+
   case BitsPerPixel of
-    2: Result := CGAPallettes[FActivePalletteIndex]
+    2: Result := CGAPallettes[Byte(Index)];
   else
     Result := CGAPallettes[4];
   end;
@@ -142,16 +188,27 @@ begin
   FLatch[$28] := Lo(AOffset);
   FLatch[$29] := Hi(AOffset);
   FLatch[$2A] := AData;
-  if Assigned(NmiTrigger) then NmiTrigger.RaiseNmi;
+  if (FPort68Register.NmiDisable = 0) and Assigned(NmiTrigger) then
+    NmiTrigger.RaiseNmi;
 end;
 
 function TVideoController.GetActiveMode: TVideoMode;
+var
+  Index: bitpacked record
+    TextMode: 0..%1;
+    HiRes: 0..%1;
+    Unused: 0..%111111;
+  end;
 begin
-  case FVideoModeSelector of
-    %0110: Result := vmText40;
-    %1101: Result := vmText80;
-    %0010: Result := vmGraphics320;
-    %1010: Result := vmGraphics640;
+  Index.TextMode := FPort68Register.TextMode;
+  Index.HiRes := FPort68Register.HiRes;
+  Index.Unused := 0;
+
+  case Byte(Index) of
+    %01: Result := vmText40;
+    %11: Result := vmText80;
+    %00: Result := vmGraphics320;
+    %10: Result := vmGraphics640;
   else
     Result := vmText40;
   end;
@@ -260,13 +317,23 @@ end;
 
 function TVideoController.OnIORead(ADevice: IIOBusDevice; AAddress: Word; out
   AData: Byte): Boolean;
-var
-  Offset: Word;
 begin
   case AAddress of
     $28..$2A:
       begin
         AData := FLatch[AAddress];
+        Result := True;
+      end;
+
+    $68:
+      begin
+        AData := Byte(FPort68Register);
+        Result := True;
+      end;
+
+    $6A:
+      begin
+        AData := Byte(FPort6ARegister);
         Result := True;
       end;
 
@@ -293,21 +360,8 @@ procedure TVideoController.OnIOWrite(Sender: IIOBusDevice; AAddress: Word;
   AData: Byte);
 begin
   case AAddress of
-    $68:
-      begin
-        FVideoModeSelector :=
-          (FVideoModeSelector and $F3) or ((AData shr 4) and $0C);
-
-        if (AData and (1 shl 6)) <> 0 then
-          FActivePalletteIndex := 3
-        else
-          FActivePalletteIndex := (AData shl 4) and $03;
-      end;
-    $6A:
-      begin
-        FVideoModeSelector :=
-          (FVideoModeSelector and $FC) or ((AData shr 6) and $03);
-      end;
+    $68:  Move(AData, FPort68Register, 1);
+    $6A:  Move(AData, FPort6ARegister, 1);
 
     $3D4, $3D5, $3D8, $3D9, $3DA:
       Writeln(Format('CGA write %.x: %.2x', [AAddress, AData]));

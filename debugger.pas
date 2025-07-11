@@ -50,7 +50,7 @@ var
   S: String;
 begin
   Cmd := Format('/usr/bin/ndisasm -o0x%.x %s', [AAddress, AFileName]);
-  Writeln(Cmd);
+  //Writeln(Cmd);
   RunCommand(Cmd, Contents);
 
   SourceLines := TStringList.Create;
