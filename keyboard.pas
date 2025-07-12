@@ -59,7 +59,7 @@ var
     (keyE, keyNone, keyCapsLock, keyH, keyW, keyQ, keyA, keyNone),
     (keyLeftShift, keyRightControl, keyLeftControl, keyC, keyX, keyLeftAlt, keyRightAlt, keyRightShift),
     (keyNone, keyNumLock, keyDecimal, keyNone, keyNone, keyF9, keyScrollLock, keyNumPad6),
-    (keyNone { D3 }, keyPrintScreen, keyTab, keyY, keyNone { D2 }, keyF10, keyNone { D1 }, keyNone { UKR i })
+    (keyD3, keyPrintScreen, keyTab, keyY, keyD2, keyF10, keyD1, keyNone { UKR i })
   );
 
   Port6AMap: array[0..7, 0..3] of TKeyboard.TKey = (
@@ -116,8 +116,8 @@ begin
   { n / a }
 end;
 
-function TKeyboard.OnIORead(ADevice: IIOBusDevice; AAddress: Word; out
-  AData: Byte): Boolean;
+function TKeyboard.OnIORead(
+  ADevice: IIOBusDevice; AAddress: Word; out AData: Byte): Boolean;
 var
   I: Integer;
 begin
@@ -129,11 +129,10 @@ begin
         AData := 0;
         if ScanCode = $FF then Exit;
 
-        for I := 0 to High(Port68Map) do
+        AData := $FF;
+        for I := 0 to High(Port68Map[0]) do
           if Self[Port68Map[ActiveRow, I]] then
-            AData := AData or (1 shl I);
-
-        AData := not AData;
+            AData := AData and not (1 shl I);
       end;
     $6A:
       begin
@@ -143,14 +142,11 @@ begin
           AData := 0;
           Exit;
         end;
-        AData := 0;
 
-        for I := 0 to High(Port6AMap) do
-          if not Self[Port6AMap[ActiveRow, I]] then
-            AData := AData or (1 shl I);
-
-        AData := $F0 or (not AData);
-        AData := $FF;
+        AData := $0F;
+        for I := 0 to High(Port6AMap[0]) do
+          if Self[Port6AMap[ActiveRow, I]] then
+            AData := AData and not (1 shl I);
       end;
   else
     Result := False;
