@@ -2,6 +2,10 @@ program pas8088;
 
 {$mode objfpc}{$H+}
 
+{$ifdef darwin}
+  {$linklib raylib}
+{$endif}
+
 uses
   {$IFDEF UNIX}
   //cthreads,
@@ -16,9 +20,8 @@ const
   Cycles = 1000000 div FPS;
 
   BiosFile = 'poisk_1991.bin';
-  CartFile = 'BASICC11.BIN';
-  //CartFile = 'test.cart';
-  BootstrapFile = ''; // 'test.cart';
+  CartFile = '/var/tmp/BASICC11.BIN';
+  BootstrapFile = ''; // '/var/tmp/cat.bin';
 
   DBG = False;
 
@@ -44,6 +47,9 @@ type
 
   TApp = class
   public
+    type
+      TKeyboardMap = specialize TDictionary<TKeyboard.TKey, specialize TArray<RayLib.TKeyboardKey>>;
+  public
     Target: TRenderTexture;
     FFont: TFont;
     FDebugger: TDebugger;
@@ -55,6 +61,7 @@ type
     FNmiCounter: Integer;
     FStepByStep: Boolean;
     FKeybEnabled: Boolean;
+    FKeyboardMap: TKeyboardMap;
     Speed: Integer;
     Keyboard: TKeyboard;
     constructor Create;
@@ -62,6 +69,7 @@ type
     procedure Run;
     procedure RenderDisplay(AVideo: TVideoController);
     procedure RenderDebugger(ACpu: TCpu8088);
+    procedure BuildKeyboardMap;
     procedure UpdateKeyboard(AKeyboard: TKeyboard);
     function BuildMachine: TMachine;
     function InterruptHook(ASender: TObject; ANumber: Byte): Boolean;
@@ -137,6 +145,9 @@ begin
   FDumpStream := TWriteBufStream.Create(
     TFileStream.Create('/tmp/comp.dump', fmCreate));
   TWriteBufStream(FDumpStream).SourceOwner := True;
+
+  FKeyboardMap := TKeyboardMap.Create;
+  BuildKeyboardMap;
 end;
 
 destructor TApp.Destroy;
@@ -144,6 +155,7 @@ begin
   FreeAndNil(FDebugger);
   FreeAndNil(FLogWriter);
   FreeAndNil(FDumpStream);
+  FreeAndNil(FKeyboardMap);
   inherited Destroy;
 end;
 
@@ -175,8 +187,8 @@ var
 begin
   FDebug := DBG;
 
-  SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-  InitWindow(1600, 900, 'Poisk');
+  SetConfigFlags(FLAG_WINDOW_RESIZABLE or FLAG_WINDOW_HIGHDPI);
+  InitWindow(1280, 720, 'Poisk');
   SetTargetFPS(FPS);
 
   FFont := LoadFont(FontFile);
@@ -281,7 +293,7 @@ begin
         DrawTexturePro(
           Target.texture,
           RectangleCreate(0, 0, Target.texture.width, -Target.texture.height),
-          RectangleCreate(0, 0, GetScreenHeight * 1.333, GetScreenHeight),
+          RectangleCreate(64, 64, GetScreenHeight * 1.333 * 0.85, GetScreenHeight * 0.85),
           Vector2Zero, 0, WHITE);
       EndShaderMode;
       RenderDebugger(Computer.Cpu);
@@ -481,33 +493,85 @@ begin
   end;
 end;
 
+procedure TApp.BuildKeyboardMap;
+begin
+  with FKeyboardMap do
+  begin
+    Clear;
+    Add(keyEnter, [KEY_ENTER]);
+    Add(keySpace, [KEY_SPACE]);
+    Add(keyEsc, [KEY_ESCAPE]);
+    Add(keyBackspace, [KEY_BACKSPACE]);
+    Add(keyF1, [KEY_F1]);
+    Add(keyF2, [KEY_F2]);
+    Add(keyF3, [KEY_F3]);
+    Add(keyF4, [KEY_F4]);
+    Add(keyF5, [KEY_F5]);
+    Add(keyF6, [KEY_F6]);
+    Add(keyF7, [KEY_F7]);
+    Add(keyF8, [KEY_F8]);
+    Add(keyF9, [KEY_F9]);
+    Add(keyF10, [KEY_F10]);
+    Add(keyD1, [KEY_ONE]);
+    Add(keyD2, [KEY_TWO]);
+    Add(keyD3, [KEY_THREE]);
+    Add(keyD4, [KEY_FOUR]);
+    Add(keyD5, [KEY_FIVE]);
+    Add(keyD6, [KEY_SIX]);
+    Add(keyD7, [KEY_SEVEN]);
+    Add(keyD8, [KEY_EIGHT]);
+    Add(keyD9, [KEY_NINE]);
+    Add(keyD0, [KEY_ZERO]);
+    Add(keyA, [KEY_A]);
+    Add(keyB, [KEY_B]);
+    Add(keyC, [KEY_C]);
+    Add(keyD, [KEY_D]);
+    Add(keyE, [KEY_E]);
+    Add(keyF, [KEY_F]);
+    Add(keyG, [KEY_G]);
+    Add(keyH, [KEY_H]);
+    Add(keyI, [KEY_I]);
+    Add(keyJ, [KEY_J]);
+    Add(keyK, [KEY_K]);
+    Add(keyL, [KEY_L]);
+    Add(keyM, [KEY_M]);
+    Add(keyN, [KEY_N]);
+    Add(keyO, [KEY_O]);
+    Add(keyP, [KEY_P]);
+    Add(keyQ, [KEY_Q]);
+    Add(keyR, [KEY_R]);
+    Add(TKeyboard.TKey.keyS, [KEY_S]);
+    Add(keyT, [KEY_T]);
+    Add(keyU, [KEY_U]);
+    Add(keyV, [KEY_V]);
+    Add(keyW, [KEY_W]);
+    Add(keyX, [KEY_X]);
+    Add(keyY, [KEY_Y]);
+    Add(keyZ, [KEY_Z]);
+    Add(keyNumPad1, [KEY_KP_1]);
+    Add(keyNumPad2, [KEY_KP_2, KEY_DOWN]);
+    Add(keyNumPad3, [KEY_KP_3]);
+    Add(keyNumPad4, [KEY_KP_4, KEY_LEFT]);
+    Add(keyNumPad5, [KEY_KP_5]);
+    Add(keyNumPad6, [KEY_KP_6, KEY_RIGHT]);
+    Add(keyNumPad7, [KEY_KP_7]);
+    Add(keyNumPad8, [KEY_KP_8, KEY_UP]);
+    Add(keyNumPad9, [KEY_KP_9]);
+    Add(keyNumPad0, [KEY_KP_0, KEY_INSERT]);
+  end;
+end;
+
 procedure TApp.UpdateKeyboard(AKeyboard: TKeyboard);
 var
-  RaylibKey: Integer;
-  EmulKey: TKeyboard.TKey;
+  Item: specialize TPair<TKeyboard.TKey, specialize TArray<RayLib.TKeyboardKey>>;
+  RaylibKey: RayLib.TKeyboardKey;
 begin
-  for RaylibKey := KEY_NULL to KEY_KP_EQUAL do
+  for Item in FKeyboardMap do
   begin
-    case RaylibKey of
-      KEY_ENTER: EmulKey := keyEnter;
-      KEY_SPACE: EmulKey := keySpace;
-      KEY_W: EmulKey := keyW;
-      KEY_A: EmulKey := keyA;
-      KEY_S: EmulKey := keyS;
-      KEY_D: EmulKey := keyD;
-      KEY_O: EmulKey := keyO;
-      KEY_N: EmulKey := KeyN;
-      KEY_K: EmulKey := KeyK;
-      KEY_F1: EmulKey := keyF1;
-      KEY_F2: EmulKey := keyF2;
-    else
-      Continue;
-    end;
-
-    AKeyboard[EmulKey] := IsKeyDown(RaylibKey);
+    AKeyboard[Item.Key] := False;
+    for RayLibKey in Item.Value do
+      AKeyboard[Item.Key] := AKeyboard[Item.Key] or IsKeyPressed(RayLibKey);
   end;
-
-  AKeyboard[keyEsc] := IsKeyDown(KEY_ESCAPE);
 end;
 
 function TApp.InterruptHook(ASender: TObject; ANumber: Byte): Boolean;
