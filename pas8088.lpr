@@ -502,6 +502,10 @@ begin
     Add(keySpace, [KEY_SPACE]);
     Add(keyEsc, [KEY_ESCAPE]);
     Add(keyBackspace, [KEY_BACKSPACE]);
+    Add(keyLeftShift, [KEY_LEFT_SHIFT]);
+    Add(keyRightShift, [KEY_RIGHT_SHIFT]);
+    Add(keyLeftControl, [KEY_LEFT_CONTROL]);
+    Add(keyRightControl, [KEY_RIGHT_CONTROL]);
     Add(keyF1, [KEY_F1]);
     Add(keyF2, [KEY_F2]);
     Add(keyF3, [KEY_F3]);
@@ -548,15 +552,15 @@ begin
     Add(keyX, [KEY_X]);
     Add(keyY, [KEY_Y]);
     Add(keyZ, [KEY_Z]);
-    Add(keyNumPad1, [KEY_KP_1]);
+    Add(keyNumPad1, [KEY_KP_1, KEY_END]);
     Add(keyNumPad2, [KEY_KP_2, KEY_DOWN]);
-    Add(keyNumPad3, [KEY_KP_3]);
+    Add(keyNumPad3, [KEY_KP_3, KEY_PAGE_DOWN]);
     Add(keyNumPad4, [KEY_KP_4, KEY_LEFT]);
     Add(keyNumPad5, [KEY_KP_5]);
     Add(keyNumPad6, [KEY_KP_6, KEY_RIGHT]);
-    Add(keyNumPad7, [KEY_KP_7]);
+    Add(keyNumPad7, [KEY_KP_7, KEY_HOME]);
     Add(keyNumPad8, [KEY_KP_8, KEY_UP]);
-    Add(keyNumPad9, [KEY_KP_9]);
+    Add(keyNumPad9, [KEY_KP_9, KEY_PAGE_UP]);
     Add(keyNumPad0, [KEY_KP_0, KEY_INSERT]);
   end;
 end;
@@ -570,7 +574,7 @@ begin
   begin
     AKeyboard[Item.Key] := False;
     for RayLibKey in Item.Value do
-      AKeyboard[Item.Key] := AKeyboard[Item.Key] or IsKeyPressed(RayLibKey);
+      AKeyboard[Item.Key] := AKeyboard[Item.Key] or IsKeyDown(RayLibKey);
   end;
 end;
 
