@@ -150,7 +150,7 @@ implementation
 function TVideoController.GetSegment: Word;
 begin
   case ActiveMode of
-    vmText40, vmText80: Result := BaseSegment + $400;
+    vmText40, vmText80: Result := BaseSegment + (FPort68Register.TextMode shl 10);
     vmGraphics320, vmGraphics640: Result := BaseSegment;
   end;
 end;
@@ -166,8 +166,8 @@ end;
 function TVideoController.GetActivePallette: TCGAPallette;
 var
   Index: bitpacked record
-    Palette: 0..%1;
     Intensity: 0..%1;
+    Palette: 0..%1;
     Unused: 0..%111111;
   end;
 begin
@@ -339,16 +339,17 @@ begin
 
     $3D4, $3D5, $3D8, $3D9:
       begin
-        Writeln(Format('CGA read %.x', [AAddress]));
+        { Writeln(Format('CGA read %.x', [AAddress])); }
         ActivateTrap(Lo(AAddress) or $4000);
       end;
 
     $3DA:
       begin
         { Todo }
-        Writeln(Format('CGA read %.x', [AAddress]));
-        Tmp := Tmp xor 1;
-        Result := True;
+        { Writeln(Format('CGA read %.x', [AAddress])); }
+        Tmp := Tmp xor $08;
+        AData := Tmp;
+        Result := Result;
       end;
 
   else

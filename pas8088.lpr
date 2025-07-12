@@ -6,7 +6,8 @@ uses
   {$IFDEF UNIX}
   //cthreads,
   {$ENDIF}
-  Classes, SysUtils, StrUtils, Math, StreamEx, bufstream, RayLib, RayMath,
+  Classes, SysUtils, StrUtils, Math, StreamEx, bufstream, Generics.Collections,
+  RayLib, RayMath,
   Cpu8088, Memory, IO, Machine, VideoController, Interrupts, Hardware, Debugger,
   Keyboard;
 
@@ -15,14 +16,20 @@ const
   Cycles = 1000000 div FPS;
 
   BiosFile = 'poisk_1991.bin';
-  CartFile = '';
-  BootstrapFile = '';
+  CartFile = 'BASICC11.BIN';
+  //CartFile = 'test.cart';
+  BootstrapFile = ''; // 'test.cart';
 
   DBG = False;
+
+  FontFile = 'LiberationMono-Regular.ttf';
 
   RamAddress   = $00000;
   BiosAddress  = $FE000;
   VideoAddress = $B8000;
+
+var
+  Breakpoints: array of TPhysicalAddress = ($00000, $C4D8E);
 
 type
   TDumpFrame = record
@@ -38,12 +45,16 @@ type
   TApp = class
   public
     Target: TRenderTexture;
+    FFont: TFont;
     FDebugger: TDebugger;
     FLogWriter: TStreamWriter;
     FDumpStream: TStream;
     FDebug: Boolean;
+    FStepBreakpoint: TPhysicalAddress;
     FFrames: UInt64;
     FNmiCounter: Integer;
+    FStepByStep: Boolean;
+    FKeybEnabled: Boolean;
     Speed: Integer;
     Keyboard: TKeyboard;
     constructor Create;
@@ -51,9 +62,12 @@ type
     procedure Run;
     procedure RenderDisplay(AVideo: TVideoController);
     procedure RenderDebugger(ACpu: TCpu8088);
+    procedure UpdateKeyboard(AKeyboard: TKeyboard);
     function BuildMachine: TMachine;
     function InterruptHook(ASender: TObject; ANumber: Byte): Boolean;
-    procedure OnInstruction(ASender: TObject; AInstruction: TInstruction);
+    function OnBeforeInstruction(ASender: TObject; AAddress: TPhysicalAddress
+      ): Boolean;
+    procedure OnAfterInstruction(ASender: TObject; AInstruction: TInstruction);
   end;
 
 function TApp.BuildMachine: TMachine;
@@ -137,8 +151,26 @@ procedure TApp.Run;
 var
   Computer: TMachine;
   ScanlineShader: TShader;
-  LinesLoc: Integer;
+  LinesLoc, I: Integer;
   Tmp: Single = 400.0;
+  Listing: array of TDebugger.TSourceLine;
+  PrevTicks: QWord = 0;
+
+  procedure LoadBytesToDebugger(AMemoryBus: IMemoryBus; AAddress: TPhysicalAddress);
+  var
+    Data: Byte;
+    Code: TBytes = ();
+    I: Integer;
+  begin
+    SetLength(Code, 64);
+    for I := 0 to High(Code) do
+    begin
+      AMemoryBus.InvokeRead(Nil, AAddress + I - 8, Data);
+      Code[I] := Data;
+    end;
+    FDebugger.Clear;
+    FDebugger.LoadBytes(Code, AAddress - 8, AAddress);
+  end;
 
 begin
   FDebug := DBG;
@@ -147,6 +179,8 @@ begin
   InitWindow(1600, 900, 'Poisk');
   SetTargetFPS(FPS);
 
+  FFont := LoadFont(FontFile);
+
   Target := LoadRenderTexture(640, 400);
   SetTextureFilter(Target.texture, TEXTURE_FILTER_BILINEAR);
 
@@ -154,43 +188,79 @@ begin
   Speed := Cycles;
 
   Computer.Cpu.InterruptHook := @InterruptHook;
-  Computer.Cpu.OnAfterInstruction := @OnInstruction;
+  Computer.Cpu.OnBeforeInstruction := @OnBeforeInstruction;
+  Computer.Cpu.OnAfterInstruction := @OnAfterInstruction;
 
-  FDebugger.LoadProgram(BiosFile, BiosAddress);
+  {
+  FDebugger.LoadFromFile(BiosFile, BiosAddress);
 
   if not CartFile.IsEmpty then
-    FDebugger.LoadProgram(CartFile, $C0000);
+    FDebugger.LoadFromFile(CartFile, $C0000);
+
+  if not BootstrapFile.IsEmpty then
+    FDebugger.LoadFromFile(BootstrapFile, $00600);
+  }
 
   ScanlineShader := LoadShader(Nil, TextFormat('scanlines.fs'));
 
   LinesLoc := GetShaderLocation(ScanlineShader, 'lines');
   SetShaderValue(ScanlineShader, LinesLoc, @Tmp, SHADER_UNIFORM_FLOAT);
 
+  FKeybEnabled := True;
+
   while not WindowShouldClose do
   begin
     Inc(FFrames);
 
-    Keyboard[keyEsc] := IsKeyDown(KEY_ESCAPE);
-    Keyboard[keyEnter] := IsKeyDown(KEY_ENTER);
-    Keyboard[keyF1] := IsKeyDown(KEY_F1);
-    Keyboard[keyF2] := IsKeyDown(KEY_F2);
-    Keyboard[keyE] := IsKeyDown(KEY_E);
+    UpdateKeyboard(Keyboard);
 
-    Keyboard[keyW] := IsKeyDown(KEY_W);
-    Keyboard[keyA] := IsKeyDown(KEY_A);
-    Keyboard[keyS] := IsKeyDown(KEY_S);
-    Keyboard[keyD] := IsKeyDown(KEY_D);
+    if FStepByStep and (PrevTicks <> Computer.Cpu.Ticks) then
+      LoadBytesToDebugger(Computer.MemoryBus, Computer.Cpu.CurrentAddress);
+
+    PrevTicks := Computer.Cpu.Ticks;
 
     try
-      Computer.Run(Cycles);
-      if (Computer.Cpu.Ticks > 2000000) then
+      if (not FStepByStep) or (Computer.Cpu.Registers.CS >= $F000) then
       begin
-        if Odd(FFrames) then
-          Computer.Cpu.RaiseHardwareInterrupt($08)  { Todo: TIMER0 }
-        else
-          Computer.Cpu.RaiseHardwareInterrupt($0E);  { Todo: TIMER1 }
+        for I := 1 to Cycles do
+        begin
+          Computer.Run(1);
+          if FStepByStep then Break;
+        end;
+
+        if (FFrames > 20) then
+        begin
+          if (Computer.Cpu.Ticks mod 10000) = 0 then
+            if not Odd(FFrames) then
+              Computer.Cpu.RaiseHardwareInterrupt($08)  { Todo: TIMER0 }
+            else
+            if FKeybEnabled then
+              Computer.Cpu.RaiseHardwareInterrupt($0E);  { Todo: TIMER1 }
+        end;
+      end else
+      begin
+        if IsKeyPressed(KEY_F7) or IsKeyPressedRepeat(KEY_F7) then
+        begin
+          Computer.Run(1); { Step into }
+        end;
+
+        if IsKeyPressed(KEY_F8) or IsKeyPressedRepeat(KEY_F8) then
+        begin
+          { Step over }
+          Listing := FDebugger.GetListing(Computer.Cpu.CurrentAddress, 0, 1);
+          if Length(Listing) > 0 then
+            FStepBreakpoint := Listing[High(Listing)].Address;
+          FStepByStep := False;
+          Computer.Run(1);
+        end;
+        if IsKeyPressed(KEY_F9) then
+        begin
+          { Run }
+          FStepByStep := False;
+          Computer.Run(1);
+        end;
       end;
-      //Computer.Run(Cycles div 2);
+
     except
       on E: Exception do
         begin
@@ -257,70 +327,192 @@ procedure TApp.RenderDebugger(ACpu: TCpu8088);
 var
   Left: Integer;
   Color: TColorB;
+  Listing: array of TDebugger.TSourceLine;
+  Line: TDebugger.TSourceLine;
+  I: Integer;
+  Addr: TPhysicalAddress;
 const
   FontSize = 48;
-  VertSpacing = 12;
+  CodeFontSize = 48;
+  VertSpacing = 1;
 begin
-  Left := GetScreenWidth - 280;
-  Color := ColorAlpha(YELLOW, 0.7);
+  Left := GetScreenWidth - 360;
+  Color := ColorAlpha(YELLOW, 0.9);
 
-  DrawText(
+  DrawTextEx(
+    FFont,
     PChar(Format('%.4x:%.4x %s',
       [
         ACpu.Registers.CS, ACpu.Registers.IP,
-        FDebugger.FindLine(ACpu.Registers.CS, ACpu.Registers.IP)
+        FDebugger.FindLine(ACpu.CurrentAddress)
       ]
     )),
-    Left - 480, 0 * (FontSize + VertSpacing) + 0, FontSize, Color);
+    Vector2Create(Left - 600, 0 * (FontSize + VertSpacing) + 0), CodeFontSize, 1, Color);
 
-  DrawText(
-    PChar(Format('AX: %.4x', [ACpu.Registers.AX])),
-    Left, 1 * (FontSize + VertSpacing) + 30, FontSize, Color);
-  DrawText(
-    PChar(Format('BX: %.4x', [ACpu.Registers.BX])),
-    Left, 2 * (FontSize + VertSpacing) + 30, FontSize, Color);
-  DrawText(
-    PChar(Format('CX: %.4x', [ACpu.Registers.CX])),
-    Left, 3 * (FontSize + VertSpacing) + 30, FontSize, Color);
-  DrawText(
-    PChar(Format('DX: %.4x', [ACpu.Registers.DX])),
-    Left, 4 * (FontSize + VertSpacing) + 30, FontSize, Color);
+  DrawTextEx(
+    FFont,
+    PChar(Format('AX %.4x', [ACpu.Registers.AX])),
+    Vector2Create(Left, 0 * (FontSize + VertSpacing) + 0), FontSize, 1, Color);
+  DrawTextEx(
+    FFont,
+    PChar(Format('BX %.4x', [ACpu.Registers.BX])),
+    Vector2Create(Left, 1 * (FontSize + VertSpacing) + 0), FontSize, 1, Color);
+  DrawTextEx(
+    FFont,
+    PChar(Format('CX %.4x', [ACpu.Registers.CX])),
+    Vector2Create(Left, 2 * (FontSize + VertSpacing) + 0), FontSize, 1, Color);
+  DrawTextEx(
+    FFont,
+    PChar(Format('DX %.4x', [ACpu.Registers.DX])),
+    Vector2Create(Left, 3 * (FontSize + VertSpacing) + 0), FontSize, 1, Color);
 
-  DrawText(
-    PChar(Format('BP: %.4x', [ACpu.Registers.BP])),
-    Left, 5 * (FontSize + VertSpacing) + 60, FontSize, Color);
-  DrawText(
-    PChar(Format('SP: %.4x', [ACpu.Registers.SP])),
-    Left, 6 * (FontSize + VertSpacing) + 60, FontSize, Color);
-  DrawText(
-    PChar(Format('SI: %.4x', [ACpu.Registers.SI])),
-    Left, 7 * (FontSize + VertSpacing) + 60, FontSize, Color);
-  DrawText(
-    PChar(Format('DI: %.4x', [ACpu.Registers.DI])),
-    Left, 8 * (FontSize + VertSpacing) + 60, FontSize, Color);
+  DrawTextEx(
+    FFont,
+    PChar(Format('BP %.4x', [ACpu.Registers.BP])),
+    Vector2Create(Left, 4 * (FontSize + VertSpacing) + 48), FontSize, 1, Color);
+  DrawTextEx(
+    FFont,
+    PChar(Format('SP %.4x', [ACpu.Registers.SP])),
+    Vector2Create(Left, 5 * (FontSize + VertSpacing) + 48), FontSize, 1, Color);
+  DrawTextEx(
+    FFont,
+    PChar(Format('SI %.4x', [ACpu.Registers.SI])),
+    Vector2Create(Left, 6 * (FontSize + VertSpacing) + 48), FontSize, 1, Color);
+  DrawTextEx(
+    FFont,
+    PChar(Format('DI %.4x', [ACpu.Registers.DI])),
+    Vector2Create(Left, 7 * (FontSize + VertSpacing) + 48), FontSize, 1, Color);
 
-  DrawText(
-    PChar(Format('CS: %.4x', [ACpu.Registers.CS])),
-    Left, 9 * (FontSize + VertSpacing) + 90, FontSize, Color);
-  DrawText(
-    PChar(Format('DS: %.4x', [ACpu.Registers.DS])),
-    Left, 10 * (FontSize + VertSpacing) + 90, FontSize, Color);
-  DrawText(
-    PChar(Format('ES: %.4x', [ACpu.Registers.ES])),
-    Left, 11 * (FontSize + VertSpacing) + 90, FontSize, Color);
-  DrawText(
-    PChar(Format('SS: %.4x', [ACpu.Registers.SS])),
-    Left, 12 * (FontSize + VertSpacing) + 90, FontSize, Color);
+  DrawTextEx(
+    FFont,
+    PChar(Format('CS %.4x', [ACpu.Registers.CS])),
+    Vector2Create(Left, 8 * (FontSize + VertSpacing) + 96), FontSize, 1, Color);
+  DrawTextEx(
+    FFont,
+    PChar(Format('DS %.4x', [ACpu.Registers.DS])),
+    Vector2Create(Left, 9 * (FontSize + VertSpacing) + 96), FontSize, 1, Color);
+  DrawTextEx(
+    FFont,
+    PChar(Format('ES %.4x', [ACpu.Registers.ES])),
+    Vector2Create(Left, 10 * (FontSize + VertSpacing) + 96), FontSize, 1, Color);
+  DrawTextEx(
+    FFont,
+    PChar(Format('SS %.4x', [ACpu.Registers.SS])),
+    Vector2Create(Left, 11 * (FontSize + VertSpacing) + 96), FontSize, 1, Color);
 
+  DrawTextEx(
+    FFont,
+    PChar(Format('FL %.4x', [ACpu.Registers.Flags.GetWord])),
+    Vector2Create(Left, 12 * (FontSize + VertSpacing) + 128), FontSize, 1, Color);
+  {
   DrawText(
     PChar(Format('NMIs: %d', [FNmiCounter])),
     Left - 64, 13 * (FontSize + VertSpacing) + 120, FontSize, Color);
+  }
+
+  DrawTextEx(
+    FFont,
+    PChar(Format('A(%d)', [IfThen(ACpu.Registers.Flags.AF, 1, 0)])),
+    Vector2Create(Left + 240, 0 * (FontSize + VertSpacing) + 0), FontSize, 1,
+    specialize IfThen<TColorB>(ACpu.Registers.Flags.AF, YELLOW, GRAY));
+
+  DrawTextEx(
+    FFont,
+    PChar(Format('C(%d)', [IfThen(ACpu.Registers.Flags.CF, 1, 0)])),
+    Vector2Create(Left + 240, 1 * (FontSize + VertSpacing) + 0), FontSize, 1,
+    specialize IfThen<TColorB>(ACpu.Registers.Flags.CF, YELLOW, GRAY));
+
+  DrawTextEx(
+    FFont,
+    PChar(Format('D(%d)', [IfThen(ACpu.Registers.Flags.DF, 1, 0)])),
+    Vector2Create(Left + 240, 2 * (FontSize + VertSpacing) + 0), FontSize, 1,
+    specialize IfThen<TColorB>(ACpu.Registers.Flags.DF, YELLOW, GRAY));
+
+  DrawTextEx(
+    FFont,
+    PChar(Format('I(%d)', [IfThen(ACpu.Registers.Flags.IF_, 1, 0)])),
+    Vector2Create(Left + 240, 3 * (FontSize + VertSpacing) + 0), FontSize, 1,
+    specialize IfThen<TColorB>(ACpu.Registers.Flags.IF_, YELLOW, GRAY));
+
+  DrawTextEx(
+    FFont,
+    PChar(Format('O(%d)', [IfThen(ACpu.Registers.Flags.OF_, 1, 0)])),
+    Vector2Create(Left + 240, 4 * (FontSize + VertSpacing) + 0), FontSize, 1,
+    specialize IfThen<TColorB>(ACpu.Registers.Flags.OF_, YELLOW, GRAY));
+
+  DrawTextEx(
+    FFont,
+    PChar(Format('P(%d)', [IfThen(ACpu.Registers.Flags.PF, 1, 0)])),
+    Vector2Create(Left + 240, 5 * (FontSize + VertSpacing) + 0), FontSize, 1,
+    specialize IfThen<TColorB>(ACpu.Registers.Flags.PF, YELLOW, GRAY));
+
+  DrawTextEx(
+    FFont,
+    PChar(Format('T(%d)', [IfThen(ACpu.Registers.Flags.TF, 1, 0)])),
+    Vector2Create(Left + 240, 6 * (FontSize + VertSpacing) + 0), FontSize, 1,
+    specialize IfThen<TColorB>(ACpu.Registers.Flags.TF, YELLOW, GRAY));
+
+  DrawTextEx(
+    FFont,
+    PChar(Format('S(%d)', [IfThen(ACpu.Registers.Flags.SF, 1, 0)])),
+    Vector2Create(Left + 240, 7 * (FontSize + VertSpacing) + 0), FontSize, 1,
+    specialize IfThen<TColorB>(ACpu.Registers.Flags.SF, YELLOW, GRAY));
+
+  DrawTextEx(
+    FFont,
+    PChar(Format('Z(%d)', [IfThen(ACpu.Registers.Flags.ZF, 1, 0)])),
+    Vector2Create(Left + 240, 8 * (FontSize + VertSpacing) + 0), FontSize, 1,
+    specialize IfThen<TColorB>(ACpu.Registers.Flags.ZF, YELLOW, GRAY));
+
+  if FStepByStep then
+  begin
+    { DrawText('[STEP]', Left - 480, 70, FontSize, RED); }
+
+    Addr := ACpu.CurrentAddress;
+    DrawTextEx(FFont, PChar(Format('%.5x', [Addr])), Vector2Create(0, 64) , 72, 1, WHITE);
+
+    Listing := FDebugger.GetListing(Addr, 6, 30);
+    for I := 0 to Min(25, High(Listing)) do
+      DrawTextEx(
+        FFont,
+        PChar(Format('%.5x | %s', [Listing[I].Address, Listing[I].Contents])),
+        Vector2Create(Left - 800, I * (FontSize + 8) + 120), CodeFontSize, 1,
+        specialize IfThen<TColorB>(Listing[I].Address = Addr, YELLOW, GRAY));
+  end;
+end;
+
+procedure TApp.UpdateKeyboard(AKeyboard: TKeyboard);
+var
+  RaylibKey: Integer;
+  EmulKey: TKeyboard.TKey;
+begin
+  for RaylibKey := KEY_NULL to KEY_KP_EQUAL do
+  begin
+    case RaylibKey of
+      KEY_ENTER: EmulKey := keyEnter;
+      KEY_SPACE: EmulKey := keySpace;
+      KEY_W: EmulKey := keyW;
+      KEY_A: EmulKey := keyA;
+      KEY_S: EmulKey := keyS;
+      KEY_D: EmulKey := keyD;
+      KEY_O: EmulKey := keyO;
+      KEY_N: EmulKey := KeyN;
+      KEY_K: EmulKey := KeyK;
+      KEY_F1: EmulKey := keyF1;
+      KEY_F2: EmulKey := keyF2;
+    else
+      Continue;
+    end;
+
+    AKeyboard[EmulKey] := IsKeyDown(RaylibKey);
+  end;
+
+  AKeyboard[keyEsc] := IsKeyDown(KEY_ESCAPE);
 end;
 
 function TApp.InterruptHook(ASender: TObject; ANumber: Byte): Boolean;
 var
   Cpu: TCpu8088 absolute ASender;
-  Message: String = '';
   TestProgram: TMemoryStream;
   I: Integer;
 begin
@@ -334,7 +526,18 @@ begin
       end;
     $10:
       begin
+        if Cpu.Registers.AH = $0E then
+        begin
+          // Writeln('Print char: ', Cpu.Registers.AL);
+        end;
+        {
+        Writeln(Format('INT %.x :: %.4X %.4X :: AH:%.2x AL:%.2x', [
+          ANumber,
+          Cpu.Registers.CS, Cpu.Registers.IP,
+          Cpu.Registers.AH, Cpu.Registers.AL
+        ]));
         //if Cpu.Registers.AH = $0E then Writeln('Prints');
+        }
       end;
 
     $19:
@@ -342,7 +545,6 @@ begin
       begin
         TestProgram := TMemoryStream.Create;
         TestProgram.LoadFromFile(BootstrapFile);
-        //TestProgram.LoadFromFile('test.bin');
         I := 0;
         while TestProgram.Position < TestProgram.Size do
         begin
@@ -363,14 +565,44 @@ begin
 
 end;
 
-procedure TApp.OnInstruction(ASender: TObject; AInstruction: TInstruction);
+function TApp.OnBeforeInstruction(ASender: TObject; AAddress: TPhysicalAddress): Boolean;
+var
+  Cpu: TCpu8088 absolute ASender;
+  Res: TBinarySearchResult;
+  BreakAddr: TPhysicalAddress;
+
+begin
+  Result := False;
+  if FStepByStep then
+  begin
+    //LoadBytesToDebugger;
+    Exit;
+  end;
+
+  if FStepBreakpoint <> 0 then
+    FStepByStep := (AAddress = FStepBreakpoint)
+  else
+    for BreakAddr in Breakpoints do
+      if BreakAddr = AAddress then
+      begin
+        FStepByStep := True;
+        Break;
+      end;
+
+    { FStepByStep := specialize TArrayHelper<TPhysicalAddress>.BinarySearch(Breakpoints, AAddress, Res); }
+
+  //if FStepByStep then LoadBytesToDebugger;
+  Result := FStepByStep;
+end;
+
+procedure TApp.OnAfterInstruction(ASender: TObject; AInstruction: TInstruction);
 var
   Line: String;
   Data: Byte;
   Frame: TDumpFrame;
   Cpu: TCpu8088 absolute ASender;
 begin
-  Frame.PhysicalAddress := (AInstruction.CS shl 4) and AInstruction.IP;
+  Frame.PhysicalAddress := (AInstruction.CS shl 4) + AInstruction.IP;
   Frame.CodeLenth := AInstruction.Length;
   Frame.CodeBytes := AInstruction.Code;
 
@@ -395,7 +627,9 @@ begin
 
   //FDebug := AInstruction.CS = $60;
 
-  if FDebug then
+  //if (AInstruction.CS = $C000) then FKeybEnabled := False;
+
+  if FDebug or FStepByStep then
     WriteLn(Format('%.4x:%.4x | %-24s | %s ',
     [
       AInstruction.CS, AInstruction.IP,

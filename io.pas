@@ -44,6 +44,7 @@ procedure TIOBus.InvokeRead(ADevice: IIOBusDevice; AAddress: Word; out AData: By
 var
   Device: IIOBusDevice;
 begin
+  { Writeln(Format('PORT [%.X] READ', [AAddress])); }
   for Device in FDevices do
     if (Device <> ADevice)
         and Device.OnIORead(ADevice, AAddress, AData) then Exit;

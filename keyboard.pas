@@ -14,9 +14,16 @@ type
   TKeyboard = class(TComponent, IIOBusDevice)
   public
     type TKey = (
-      keyEsc, keyEnter, keySpace,
+      keyNone, keyEsc, keyEnter, keySpace, keyBackspace,
+      keyLeftShift, keyRightShift, keyLeftControl, keyRightControl,
+      keyLeftAlt, keyRightAlt, keyTilde, keyTab, keyCapsLock, keyNumLock,
+      keyPrintScreen, keyPauseBreak, keyScrollLock, keySemiColon, keyPipe,
       keyF1, KeyF2, keyF3, KeyF4, keyF5, KeyF6, keyF7, keyF8, keyF9, keyF10,
-      keyE, keyW, keyS, keyA, keyD
+      keyQ, keyW, keyE, keyR, keyT, keyY, keyU, keyI, keyO, keyP,
+      keyA, keyS, keyD, keyF, keyG, keyH, keyJ, keyK, keyL,
+      keyZ, keyX, keyC, keyV, keyB, keyN, keyM,
+      keyNumPad0, keyNumPad1, keyNumPad2, keyNumPad3, keyNumPad4, keyNumPad5,
+      keyNumPad6, keyNumPad7, keyNumPad8, keyNumPad9, keyNumPad10
     );
   private
     FIOBus: IIOBus;
@@ -40,6 +47,25 @@ type
     function OnIORead(ADevice: IIOBusDevice; AAddress: Word; out AData: Byte): Boolean;
     procedure OnIOWrite(Sender: IIOBusDevice; AAddress: Word; AData: Byte);
   end;
+
+var
+  Port68Map: array[0..7, 0..7] of TKeyboard.TKey = (
+    (keyNone, keyNumPad5, keyNone, keySemiColon, keyNone, keyEnter, keyNumpad8, keyNumPad5),
+    (keyNone, keyNumpad4, keyNumPad2, keyF6, keyPipe, keyNone, keyNumpad7, keyNumPad1),
+    (keyF, keyNumPad9, keyNumpad3, keyN, keyD, keyS, keyZ, keyNone),
+    (keyF2, keyNone, keyNone, keyF5, keyF1, keyEsc, keyTilde, keyPauseBreak),
+    (keyNone, keyNone, keyNone, keyNone, keyNone, keyNone, keyNone, keyNone),
+    (keyNone, keyNone, keyNone, keyNone, keyNone, keyNone, keyNone, keyNone),
+    (keyNone, keyNone, keyNone, keyNone, keyNone, keyNone, keyNone, keyNone),
+    (keyNone, keyNone, keyNone, keyNone, keyNone, keyNone, keyNone, keyNone)
+  );
+
+  Port6AMap: array[0..3, 0..7] of TKeyboard.TKey = (
+    (keyNone, keyNone, keyNone, keyNone, keyNone, keyNone, keyNone, keyNone),
+    (keyNone, keyNone, keyNone, keyNone, keyNone, keyNone, keyNone, keyNone),
+    (keyNone, keyNone, keyNone, keyNone, keyNone, keyNone, keyNone, keyNone),
+    (keyNone, keyNone, keyNone, keyNone, keyNone, keyNone, keyNone, keyNone)
+  );
 
 implementation
 
@@ -86,6 +112,8 @@ end;
 
 function TKeyboard.OnIORead(ADevice: IIOBusDevice; AAddress: Word; out
   AData: Byte): Boolean;
+var
+  I: Integer;
 begin
   case AAddress of
     $60: AData := ScanCode;
@@ -95,17 +123,9 @@ begin
         AData := 0;
         if ScanCode = $FF then Exit;
 
-        if Self[keyEnter] and (ActiveRow = 0) then AData := AData or (1 shl 5);
-        if Self[keyEsc] and (ActiveRow = 4) then  AData := AData or (1 shl 5);
-        if Self[keyF1] and (ActiveRow = 3) then AData := AData or (1 shl 4);
-        if Self[keyF2] and (ActiveRow = 3) then AData := AData or (1 shl 0);
-
-        if Self[keyE] and (ActiveRow = 4) then AData := AData or (1 shl 0);
-
-        if Self[keyW] and (ActiveRow = 4) then AData := AData or (1 shl 4);
-        if Self[keyA] and (ActiveRow = 4) then AData := AData or (1 shl 6);
-        if Self[keyS] and (ActiveRow = 2) then AData := AData or (1 shl 5);
-        if Self[keyD] and (ActiveRow = 2) then AData := AData or (1 shl 4);
+        for I := 0 to High(Port68Map) do
+          if Self[Port68Map[ActiveRow, I]] then
+            AData := AData or (1 shl I);
 
         AData := not AData;
       end;
@@ -117,6 +137,14 @@ begin
           AData := 0;
           Exit;
         end;
+        AData := 0;
+
+        if ActiveRow <= High(Port6AMap) then
+          for I := 0 to High(Port6AMap) do
+            if not Self[Port6AMap[ActiveRow, I]] then
+              AData := AData or (1 shl I);
+
+        AData := $F0 or (not AData);
         AData := $FF;
       end;
   else

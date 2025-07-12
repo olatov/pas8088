@@ -25,6 +25,7 @@ type
   end;
 
   TInteruptHook = function(ASender: TObject; ANumber: Byte): Boolean of object;
+  TInstructionHook = function(ASender: TObject; AAddress: TPhysicalAddress): Boolean of object;
   TInstructionNotifyEvent = procedure(ASender: TObject; AInstruction: TInstruction) of object;
 
   TInstructionHandler = procedure of object;
@@ -56,6 +57,8 @@ type
     procedure SetZF(AValue: Boolean);
     procedure UpdateAfterAdd8(AOld, AChange: Byte; AResult: Int16);
     procedure UpdateAfterAdd16(AOld, AChange: Word; AResult: Int32);
+    procedure UpdateAfterRol16(AOld, ACount, AResult: Word);
+    procedure UpdateAfterRol8(AOld, ACount, AResult: Byte);
     procedure UpdateAfterSar16(AResult: Word; ALastShiftedOut: Boolean);
     procedure UpdateAfterSub16(AOld, AChange: Word; AResult: Int32);
     procedure UpdateAfterSub8(AOld, AChange: Byte; AResult: Int16);
@@ -215,7 +218,7 @@ type
   private
     FHalted: Boolean;
     FOnAfterInstruction: TInstructionNotifyEvent;
-    FOnBeforeInstruction: TNotifyEvent;
+    FOnBeforeInstruction: TInstructionHook;
     FInterruptHook: TInteruptHook;
     FTicks: QWord;
     FIOBus: IIOBus;
@@ -230,9 +233,10 @@ type
     FCurrentInstruction: TInstruction;
 
     function CodeSegment: Word;
+    function GetCurrentAddress: TPhysicalAddress;
     procedure SetInterruptHook(AValue: TInteruptHook);
     procedure SetOnAfterInstruction(AValue: TInstructionNotifyEvent);
-    procedure SetOnBeforeInstruction(AValue: TNotifyEvent);
+    procedure SetOnBeforeInstruction(AValue: TInstructionHook);
     function StackSegment: Word;
     function DataSegment: Word;
     function ExtraSegment: Word;
@@ -466,6 +470,8 @@ type
     procedure JumpFar(ASegment, AOffset: Word); inline;
     procedure NotRM8(AModRM: TModRM);
     procedure NotRM16(AModRM: TModRM);
+    procedure NegRM8(AModRM: TModRM);
+    procedure NegRM16(AModRM: TModRM);
     procedure ShlRM8Const1(AModRM: TModRM);
     procedure ShlRM16Const1(AModRM: TModRM);
     procedure ShlRM8CL(AModRM: TModRM);
@@ -478,6 +484,8 @@ type
     procedure SarRM16Const1(AModRM: TModRM);
     procedure RorRM8Const1(AModRM: TModRM);
     procedure RorRM16Const1(AModRM: TModRM);
+    procedure RolRM8Const1(AModRM: TModRM);
+    procedure RolRM16Const1(AModRM: TModRM);
     procedure RclRM8Const1(AModRM: TModRM);
     procedure RclRM16Const1(AModRM: TModRM);
     procedure RcrRM8Const1(AModRM: TModRM);
@@ -498,7 +506,7 @@ type
     property Ticks: QWord read FTicks;
     property Halted: Boolean read FHalted;
     property Registers: TRegisters read FRegisters write FRegisters;
-    property OnBeforeInstruction: TNotifyEvent read FOnBeforeInstruction write SetOnBeforeInstruction;
+    property OnBeforeInstruction: TInstructionHook read FOnBeforeInstruction write SetOnBeforeInstruction;
     property OnAfterInstruction: TInstructionNotifyEvent read FOnAfterInstruction write SetOnAfterInstruction;
     property InterruptHook: TInteruptHook read FInterruptHook write SetInterruptHook;
     procedure RaiseNmi;
@@ -507,6 +515,7 @@ type
     procedure Reset;
     procedure Tick;
     procedure FetchInstruction;
+    property CurrentAddress: TPhysicalAddress read GetCurrentAddress;
 
     { IO bus device API }
     function GetIOBus: IIOBus;
@@ -862,12 +871,22 @@ end;
 
 procedure TFlagRegister.UpdateAfterNeg8(AResult: Byte);
 begin
-
+  CF := AResult = 0;
+  OF_ := not InRange(AResult, Int8.MinValue, Int8.MaxValue);
+  AF := (AResult and $10) <> 0;  { TODO }
+  UpdateZF8(AResult);
+  UpdateSF8(AResult);
+  UpdatePF8(AResult);
 end;
 
 procedure TFlagRegister.UpdateAfterNeg16(AResult: Word);
 begin
-
+  CF := AResult = 0;
+  OF_ := not InRange(AResult, Int16.MinValue, Int16.MaxValue);
+  AF := (AResult and $1000) <> 0;  { TODO }
+  UpdateZF16(AResult);
+  UpdateSF16(AResult);
+  UpdatePF16(AResult);
 end;
 
 procedure TFlagRegister.UpdateAfterXor8(AResult: Byte);
@@ -984,14 +1003,28 @@ end;
 procedure TFlagRegister.UpdateAfterRor8(AOld, ACount, AResult: Byte);
 begin
   if ACount = 0 then Exit;
-  CF := (AOld shr (ACount - 1)) <> 0;
+  CF := (AResult and 1) <> 0;
   if ACount = 1 then OF_ := (AResult and $C0) in [$40, $80];
 end;
 
 procedure TFlagRegister.UpdateAfterRor16(AOld, ACount, AResult: Word);
 begin
   if ACount = 0 then Exit;
-  CF := (AOld shr (ACount - 1)) <> 0;
+  CF := (AResult and 1) <> 0;
+  if ACount = 1 then OF_ := (Hi(AResult) and $C0) in [$40, $80];
+end;
+
+procedure TFlagRegister.UpdateAfterRol8(AOld, ACount, AResult: Byte);
+begin
+  if ACount = 0 then Exit;
+  CF := (AOld and 1) <> 0;
+  if ACount = 1 then OF_ := (AResult and $C0) in [$40, $80];
+end;
+
+procedure TFlagRegister.UpdateAfterRol16(AOld, ACount, AResult: Word);
+begin
+  if ACount = 0 then Exit;
+  CF := (AOld and 1) <> 0;
   if ACount = 1 then OF_ := (Hi(AResult) and $C0) in [$40, $80];
 end;
 
@@ -1316,6 +1349,11 @@ begin
   end;
 end;
 
+function TCpu8088.GetCurrentAddress: TPhysicalAddress;
+begin
+  Result := (Registers.CS shl 4) + (Registers.IP);
+end;
+
 procedure TCpu8088.SetInterruptHook(AValue: TInteruptHook);
 begin
   if FInterruptHook = AValue then Exit;
@@ -1328,7 +1366,7 @@ begin
   FOnAfterInstruction := AValue;
 end;
 
-procedure TCpu8088.SetOnBeforeInstruction(AValue: TNotifyEvent);
+procedure TCpu8088.SetOnBeforeInstruction(AValue: TInstructionHook);
 begin
   if FOnBeforeInstruction = AValue then Exit;
   FOnBeforeInstruction := AValue;
@@ -1578,7 +1616,8 @@ end;
 
 procedure TCpu8088.Push(AValue: Word);
 begin
-  Push(AValue, StackSegment);
+  {Push(AValue, StackSegment);}
+  Push(AValue, Registers.SS);
 end;
 
 procedure TCpu8088.Push(AValue: Word; ASegment: Word);
@@ -1590,7 +1629,8 @@ end;
 
 function TCpu8088.Pop: Word;
 begin
-  Result := Pop(StackSegment);
+  {Result := Pop(StackSegment);}
+  Result := Pop(Registers.SS);
 end;
 
 function TCpu8088.Pop(ASegment: Word): Word;
@@ -2550,7 +2590,7 @@ end;
 procedure TCpu8088.HandleGRP1RM16Imm8;
 var
   ModRM: TModRM;
-  Imm: Byte;
+  Imm: Int8;
 begin
   ModRM := FetchModRM;
   Imm := FetchCodeByte;
@@ -2647,7 +2687,9 @@ begin
   Old := Registers.GetByIndex8(ModRM.Reg);
   CarryIn := IfThen(Registers.Flags.CF, 1, 0);
   Change := ReadRM8(ModRM);
-  Result := Old - (Change + CarryIn);
+  Result := Old;
+  Dec(Result, Change);
+  Dec(Result, CarryIn);
   Registers.SetByIndex8(ModRM.Reg, Word(Result));
   Registers.Flags.UpdateAfterSub8(Old, Change + CarryIn, Result);
 end;
@@ -2788,23 +2830,20 @@ begin
 end;
 
 procedure TCpu8088.HandleMovsb;
+var
+  Delta: array[False..True] of Int8 = (1, -1);
 begin
   WriteMemoryByte(
     Registers.ES, Registers.DI,
     ReadMemoryByte(DataSegment, Registers.SI));
 
-  if Registers.Flags.DF then
-  begin
-    Registers.SI := Registers.SI + 1;
-    Registers.DI := Registers.DI + 1;
-  end else
-  begin
-    Registers.SI := Registers.SI - 1;
-    Registers.DI := Registers.DI - 1;
-  end;
+  Registers.SI := Registers.SI + Delta[Registers.flags.DF];
+  Registers.DI := Registers.DI + Delta[Registers.Flags.DF];
 end;
 
 procedure TCpu8088.HandleMovsw;
+var
+  Delta: array[False..True] of Int16 = (2, -2);
 begin
   WriteMemoryByte(
     Registers.ES, Registers.DI,
@@ -2813,15 +2852,8 @@ begin
     Registers.ES, Registers.DI + 1,
     ReadMemoryByte(DataSegment, Registers.SI + 1));
 
-  if Registers.Flags.DF then
-  begin
-    Registers.SI := Registers.SI + 2;
-    Registers.DI := Registers.DI + 2;
-  end else
-  begin
-    Registers.SI := Registers.SI - 2;
-    Registers.DI := Registers.DI - 2;
-  end;
+  Registers.SI := Registers.SI + Delta[Registers.flags.DF];
+  Registers.DI := Registers.DI + Delta[Registers.Flags.DF];
 end;
 
 procedure TCpu8088.HandleCmpsb;
@@ -2837,12 +2869,12 @@ end;
 
 procedure TCpu8088.HandleCmpsw;
 var
-  Delta: array[False..True] of Int8 = (2, -2);
+  Delta: array[False..True] of Int16 = (2, -2);
 begin
   Cmp16(
     ReadMemoryWord(DataSegment, Registers.SI),
     ReadMemoryWord(Registers.ES, Registers.DI));
-  Registers.SI := Registers.SI + Delta[Registers.flags.DF];
+  Registers.SI := Registers.SI + Delta[Registers.Flags.DF];
   Registers.DI := Registers.DI + Delta[Registers.Flags.DF];
 end;
 
@@ -2857,45 +2889,52 @@ begin
 end;
 
 procedure TCpu8088.HandleStosb;
+var
+  Delta: array[False..True] of Int8 = (1, -1);
 begin
   WriteMemoryByte(ExtraSegment, Registers.DI, Registers.AL);
-  Registers.DI := Registers.DI + IfThen(Registers.Flags.DF, -1, 1);
+  Registers.DI := Registers.DI + Delta[Registers.Flags.DF];
 end;
 
 procedure TCpu8088.HandleStosw;
 var
   Segment: Word;
+  Delta: array[False..True] of Int16 = (2, -2);
 begin
   Segment := ExtraSegment;
   WriteMemoryByte(Segment, Registers.DI, Registers.AL);
   WriteMemoryByte(Segment, Registers.DI + 1, Registers.AH);
-  Registers.DI := Registers.DI + IfThen(Registers.Flags.DF, -2, 2);
+  Registers.DI := Registers.DI + Delta[Registers.Flags.DF];
 end;
 
 procedure TCpu8088.HandleLodsb;
+var
+  Delta: array[False..True] of Int8 = (1, -1);
 begin
   Registers.AL := ReadMemoryByte(DataSegment, Registers.SI);
-  Registers.SI := Registers.SI + IfThen(Registers.Flags.DF, -1, 1);
+  Registers.SI := Registers.SI + Delta[Registers.Flags.DF];
 end;
 
 procedure TCpu8088.HandleLodsw;
 var
   Segment: Word;
+  Delta: array[False..True] of Int16 = (2, -2);
 begin
   Segment := DataSegment;
   Registers.AL := ReadMemoryByte(Segment, Registers.SI);
   Registers.AH := ReadMemoryByte(Segment, Registers.SI + 1);
-  Registers.SI := Registers.SI + IfThen(Registers.Flags.DF, -2, 2);
+  Registers.SI := Registers.SI + Delta[Registers.Flags.DF];
 end;
 
 procedure TCpu8088.HandleScasb;
 var
   Result: Int16;
   Change: Byte;
+  Delta: array[False..True] of Int8 = (1, -1);
 begin
   Change := ReadMemoryByte(Registers.ES, Registers.DI);
   Result := Registers.AL - Change;
-  Registers.DI := Registers.DI + IfThen(Registers.Flags.DF, -1, 1);
+  Registers.DI := Registers.DI + Delta[Registers.Flags.DF];
   Registers.Flags.UpdateAfterSub8(Registers.AL, Change, Result);
 end;
 
@@ -2903,10 +2942,11 @@ procedure TCpu8088.HandleScasw;
 var
   Result: Int32;
   Change: Word;
+  Delta: array[False..True] of Int16 = (2, -2);
 begin
   Change := ReadMemoryWord(Registers.ES, Registers.DI);
   Result := Registers.AX - Change;
-  Registers.DI := Registers.DI + IfThen(Registers.Flags.DF, -2, 2);
+  Registers.DI := Registers.DI + Delta[Registers.Flags.DF];
   Registers.Flags.UpdateAfterSub16(Registers.AX, Change, Result);
 end;
 
@@ -2969,6 +3009,7 @@ begin
   case ModRM.Reg of
     0: TestRM8Imm8(ModRM, FetchCodeByte);
     2: NotRM8(ModRM);
+    3: NegRM8(ModRM);
     4: MulALRM8(ModRM);
     6: DivALRM8(ModRM);
   else
@@ -2985,6 +3026,7 @@ begin
   case ModRM.Reg of
     0: TestRM16Imm16(ModRM, FetchCodeWord);
     2: NotRM16(ModRM);
+    3: NegRM16(ModRM);
     4: MulAXRM16(ModRM);
     6: DivAXRM16(ModRM);
   else
@@ -3094,6 +3136,7 @@ var
 begin
   ModRM := FetchModRM;
   case ModRM.Reg of
+    0: RolRM8Const1(ModRM);
     1: RorRM8Const1(ModRM);
     2: RclRM8Const1(ModRM);
     3: RcrRM8Const1(ModRM);
@@ -3111,6 +3154,7 @@ var
 begin
   ModRM := FetchModRM;
   case ModRM.Reg of
+    0: RolRM16Const1(ModRM);
     1: RorRM16Const1(ModRM);
     2: RclRM16Const1(ModRM);
     3: RcrRM16Const1(ModRM);
@@ -3306,8 +3350,7 @@ begin
     4: Registers.IP := ReadMemoryWord(ModRm.Segment, ModRm.EffectiveAddr);
     5: JumpFar(ModRM.Segment, ModRM.EffectiveAddr);
     6: Push(ReadRM16(ModRM));
-  else
-    raise Exception.CreateFmt('Not implemented: %d', [ModRM.Reg]);
+    7: raise Exception.CreateFmt('Does not exist: GRP5 /%d', [ModRM.Reg]);
   end;
 end;
 
@@ -3608,6 +3651,28 @@ begin
   WriteRM16(AModRM, not ReadRM16(AModRM));
 end;
 
+procedure TCpu8088.NegRM8(AModRM: TModRM);
+var
+  Data: Byte;
+  Result: Int8;
+begin
+  Data := ReadRM8(AModRM);
+  Result := Int8(-Data);
+  WriteRM8(AModRM, Result);
+  Registers.Flags.UpdateAfterNeg8(Result);
+end;
+
+procedure TCpu8088.NegRM16(AModRM: TModRM);
+var
+  Data: Word;
+  Result: Int16;
+begin
+  Data := ReadRM16(AModRM);
+  Result := Int16(-Data);
+  WriteRM16(AModRM, Result);
+  Registers.Flags.UpdateAfterNeg16(Result);
+end;
+
 procedure TCpu8088.ShlRM8Const1(AModRM: TModRM);
 var
   Old, Result: Byte;
@@ -3727,7 +3792,7 @@ var
   Old, Result: Byte;
 begin
   Old := ReadRM8(AModRM);
-  Result := (Old shr 1) or ((Old and 1) shr 7);
+  Result := (Old shr 1) or ((Old and 1) shl 7);
   WriteRM8(AModRM, Result);
   Registers.Flags.UpdateAfterRor8(Old, 1, Result);
 end;
@@ -3737,9 +3802,29 @@ var
   Old, Result: Word;
 begin
   Old := ReadRM16(AModRM);
-  Result := (Old shr 1) or ((Old and 1) shr 15);
+  Result := (Old shr 1) or ((Old and 1) shl 15);
   WriteRM16(AModRM, Result);
   Registers.Flags.UpdateAfterRor16(Old, 1, Result);
+end;
+
+procedure TCpu8088.RolRM8Const1(AModRM: TModRM);
+var
+  Old, Result: Byte;
+begin
+  Old := ReadRM8(AModRM);
+  Result := (Old shr 7) or ((Old and (not 1)) shl 1);
+  WriteRM8(AModRM, Result);
+  Registers.Flags.UpdateAfterRol8(Old, 1, Result);
+end;
+
+procedure TCpu8088.RolRM16Const1(AModRM: TModRM);
+var
+  Old, Result: Byte;
+begin
+  Old := ReadRM16(AModRM);
+  Result := (Old shr 15) or ((Old and (not 1)) shl 1);
+  WriteRM16(AModRM, Result);
+  Registers.Flags.UpdateAfterRol16(Old, 1, Result);
 end;
 
 procedure TCpu8088.RclRM8Const1(AModRM: TModRM);
@@ -4012,7 +4097,9 @@ begin
 
   if Halted then Exit;
 
-  if Assigned(OnBeforeInstruction) then OnBeforeInstruction(Self);
+  if Assigned(OnBeforeInstruction)
+      and OnBeforeInstruction(Self, CurrentAddress) then
+    Exit;
 
   if not FCurrentInstruction.Repeating then FetchInstruction;
 
