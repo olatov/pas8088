@@ -16,8 +16,8 @@ type
     type TKey = (
       keyNone, keyEsc, keyEnter, keySpace, keyBackspace,
       keyLeftShift, keyRightShift, keyLeftControl, keyRightControl,
-      keyLeftAlt, keyRightAlt, keyTilde, keyTab, keyCapsLock, keyNumLock,
-      keyPrintScreen, keyPauseBreak, keyScrollLock, keySemiColon, keyPipe,
+      keyLeftAlt, keyRightAlt, keyGrave, keyTab, keyCapsLock, keyNumLock,
+      keyPrintScreen, keyPauseBreak, keyScrollLock, keySemiColon,
       keyF1, KeyF2, keyF3, KeyF4, keyF5, KeyF6, keyF7, keyF8, keyF9, keyF10,
       keyQ, keyW, keyE, keyR, keyT, keyY, keyU, keyI, keyO, keyP,
       keyA, keyS, keyD, keyF, keyG, keyH, keyJ, keyK, keyL,
@@ -25,7 +25,10 @@ type
       keyD1, keyD2, keyD3, keyD4, keyD5,
       keyD6, keyD7, keyD8, keyD9, keyD0,
       keyNumPad0, keyNumPad1, keyNumPad2, keyNumPad3, keyNumPad4, keyNumPad5,
-      keyNumPad6, keyNumPad7, keyNumPad8, keyNumPad9, keyNumPad10, keyDecimal
+      keyNumPad6, keyNumPad7, keyNumPad8, keyNumPad9, keyNumPad10, keyDecimal,
+      keyPeriod, keyComma, keyMinus, keyApostrophe, keyEqual,
+      keyLeftBracket, keyRightBracket, keySlash, keyBackSlash,
+      keyCCC
     );
   private
     FIOBus: IIOBus;
@@ -52,10 +55,10 @@ type
 
 var
   Port68Map: array[0..7, 0..7] of TKeyboard.TKey = (
-    (keyNone { closing bracket }, keyNumPad5, keyNone, keySemiColon, keyNone, keyEnter, keyNumPad8, keyNumPad2),
-    (keyNone { plus }, keyNumPad4, keyNumPad0, KeyF6, keyPipe, keyBackspace, keyNumPad7, keyNumPad1),
+    (keyRightBracket, keyNumPad5, keyNone, keySemiColon, keyNone, keyEnter, keyNumPad8, keyNumPad2),
+    (keyEqual, keyNumPad4, keyNumPad0, KeyF6, keyBackSlash, keyBackspace, keyNumPad7, keyNumPad1),
     (keyF, keyNumPad9, keyNumpad3, keyN, keyD, keyS, keyZ, keyNone),
-    (keyF2, keyNone, keyNone, keyF5, keyF1, keyEsc, keyTilde, keyPauseBreak),
+    (keyF2, keyNone, keyNone, keyF5, keyF1, keyEsc, keyGrave, keyPauseBreak),
     (keyE, keyNone, keyCapsLock, keyH, keyW, keyQ, keyA, keyNone),
     (keyLeftShift, keyRightControl, keyLeftControl, keyC, keyX, keyLeftAlt, keyRightAlt, keyRightShift),
     (keyNone, keyNumLock, keyDecimal, keyNone, keyNone, keyF9, keyScrollLock, keyNumPad6),
@@ -63,13 +66,13 @@ var
   );
 
   Port6AMap: array[0..7, 0..3] of TKeyboard.TKey = (
-    (keyD0, keyO, keyNone { minus }, keyNone { quote }),
-    (keyD8, keyD9, keyP, keyNone { closing bracket }),
+    (keyD0, keyO, keyMinus, keyApostrophe),
+    (keyD8, keyD9, keyP, keyLeftBracket),
     (keyM, KeyK, keyB, keyG),
     (keyD6, keyD7, keyF4, keyF3),
     (keyJ, keyI, keyT, keyR),
-    (keyNone { period }, keyNone { comma }, keyV, keySpace),
-    (keyL, keyF7, keyNone { question }, keyF8),
+    (keyPeriod, keyComma, keyV, keySpace),
+    (keyL, keyF7, keySlash, keyF8),
     (keyNone, keyU, keyD5, keyD4)
   );
 

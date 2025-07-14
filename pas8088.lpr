@@ -5,6 +5,7 @@ program pas8088;
 {$ifdef darwin}
   {$linklib raylib}
 {$endif}
+{$R-}
 
 uses
   {$IFDEF UNIX}
@@ -13,7 +14,7 @@ uses
   Classes, SysUtils, StrUtils, Math, StreamEx, bufstream, Generics.Collections,
   RayLib, RayMath,
   Cpu8088, Memory, IO, Machine, VideoController, Interrupts, Hardware, Debugger,
-  Keyboard;
+  Keyboard, Dump;
 
 const
   FPS = 50;
@@ -32,20 +33,16 @@ const
   VideoAddress = $B8000;
 
 var
-  Breakpoints: array of TPhysicalAddress = ($00000, $C4D8E);
+  Breakpoints: array of TPhysicalAddress = ($00000);
 
 type
-  TDumpFrame = record
-    PhysicalAddress: UInt32;
-    CodeLenth: Byte;
-    CodeBytes: array[0..5] of Byte;
-    AX, BX, CX, DX, BP, SP, SI, DI,
-    CS, DS, SS, ES, IP, Flags: Word;
-  end;
-
   { TApp }
 
   TApp = class
+  private
+    procedure DumpMemory(AFileName: String; AMemoryBus: IMemoryBus;
+      AAddress: TPhysicalAddress; ALength: Integer);
+    procedure OnBeforeExecution(ASender: TObject; AInstruction: TInstruction);
   public
     type
       TKeyboardMap = specialize TDictionary<TKeyboard.TKey, specialize TArray<RayLib.TKeyboardKey>>;
@@ -142,9 +139,13 @@ constructor TApp.Create;
 begin
   FDebugger := TDebugger.Create;
   FLogWriter := TStreamWriter.Create('/tmp/comp.log', False, TEncoding.UTF8, 16384);
-  FDumpStream := TWriteBufStream.Create(
-    TFileStream.Create('/tmp/comp.dump', fmCreate));
-  TWriteBufStream(FDumpStream).SourceOwner := True;
+
+  if not DumpFile.IsEmpty then
+  begin
+    FDumpStream := TWriteBufStream.Create(
+      TFileStream.Create(DumpFile, fmCreate));
+    TWriteBufStream(FDumpStream).SourceOwner := True;
+  end;
 
   FKeyboardMap := TKeyboardMap.Create;
   BuildKeyboardMap;
@@ -187,9 +188,10 @@ var
 begin
   FDebug := DBG;
 
-  SetConfigFlags(FLAG_WINDOW_RESIZABLE or FLAG_WINDOW_HIGHDPI);
+  SetConfigFlags(FLAG_WINDOW_RESIZABLE);
   InitWindow(1280, 720, 'Poisk');
   SetTargetFPS(FPS);
+  SetExitKey(KEY_NULL);
 
   FFont := LoadFont(FontFile);
 
@@ -202,6 +204,7 @@ begin
   Computer.Cpu.InterruptHook := @InterruptHook;
   Computer.Cpu.OnBeforeInstruction := @OnBeforeInstruction;
   Computer.Cpu.OnAfterInstruction := @OnAfterInstruction;
+  Computer.Cpu.OnBeforeExecution := @OnBeforeExecution;
 
   {
   FDebugger.LoadFromFile(BiosFile, BiosAddress);
@@ -222,6 +225,13 @@ begin
 
   while not WindowShouldClose do
   begin
+    if IsKeyPressed(KEY_F11) then
+      DumpMemory('mem.dump', Computer.MemoryBus, $00800, 65536);
+
+    { $01CD }
+
+    if IsKeyPressed(KEY_F12) then FStepByStep := True;
+
     Inc(FFrames);
 
     UpdateKeyboard(Keyboard);
@@ -232,7 +242,7 @@ begin
     PrevTicks := Computer.Cpu.Ticks;
 
     try
-      if (not FStepByStep) or (Computer.Cpu.Registers.CS >= $F000) then
+      if (not FStepByStep) {or (Computer.Cpu.Registers.CS >= $F000)} then
       begin
         for I := 1 to Cycles do
         begin
@@ -242,13 +252,14 @@ begin
 
         if (FFrames > 20) then
         begin
-          if (Computer.Cpu.Ticks mod 10000) = 0 then
+          if (Computer.Cpu.Ticks mod 20000) = 0 then
             if not Odd(FFrames) then
               Computer.Cpu.RaiseHardwareInterrupt($08)  { Todo: TIMER0 }
             else
             if FKeybEnabled then
               Computer.Cpu.RaiseHardwareInterrupt($0E);  { Todo: TIMER1 }
         end;
+
       end else
       begin
         if IsKeyPressed(KEY_F7) or IsKeyPressedRepeat(KEY_F7) then
@@ -312,6 +323,23 @@ begin
   FreeAndNil(Computer);
 end;
 
+procedure TApp.DumpMemory(AFileName: String;
+  AMemoryBus: IMemoryBus; AAddress: TPhysicalAddress; ALength: Integer);
+var
+  Data: Byte;
+  Stream: TMemoryStream;
+  I: TPhysicalAddress;
+begin
+  Stream := TMemoryStream.Create;
+  for I := AAddress to AAddress + ALength do
+  begin
+    AMemoryBus.InvokeRead(Nil, I, Data);
+    Stream.WriteByte(Data);
+  end;
+  Stream.SaveToFile(AFileName);
+  Stream.Free;
+end;
+
 procedure TApp.RenderDisplay(AVideo: TVideoController);
 var
   Pixel: TColorB;
@@ -343,6 +371,8 @@ var
   Line: TDebugger.TSourceLine;
   I: Integer;
   Addr: TPhysicalAddress;
+  DataByte: Byte;
+  DataWord: Word;
 const
   FontSize = 48;
   CodeFontSize = 48;
@@ -416,11 +446,22 @@ begin
     FFont,
     PChar(Format('FL %.4x', [ACpu.Registers.Flags.GetWord])),
     Vector2Create(Left, 12 * (FontSize + VertSpacing) + 128), FontSize, 1, Color);
-  {
-  DrawText(
-    PChar(Format('NMIs: %d', [FNmiCounter])),
-    Left - 64, 13 * (FontSize + VertSpacing) + 120, FontSize, Color);
-  }
+
+  for I := 0 to 12 do
+  begin
+    Addr := (ACpu.Registers.SS shl 4) + Word(ACpu.Registers.SP + (2 * I));
+    ACpu.MemoryBus.InvokeRead(Nil, Addr, DataByte);
+    DataWord := DataByte;
+    Addr := (ACpu.Registers.SS shl 4) + Word(ACpu.Registers.SP + (2 * I) + 1);
+    ACpu.MemoryBus.InvokeRead(Nil, Addr, DataByte);
+    DataWord := DataWord or (DataByte shl 8);
+
+    DrawTextEx(
+      FFont,
+      PChar(Format('ST(%d) %.4x', [I, DataWord])),
+      Vector2Create(Left, (11 + I) * (FontSize + VertSpacing) + 240), FontSize, 1, Color);
+  end;
+
 
   DrawTextEx(
     FFont,
@@ -481,7 +522,7 @@ begin
     { DrawText('[STEP]', Left - 480, 70, FontSize, RED); }
 
     Addr := ACpu.CurrentAddress;
-    DrawTextEx(FFont, PChar(Format('%.5x', [Addr])), Vector2Create(0, 64) , 72, 1, WHITE);
+    //DrawTextEx(FFont, PChar(Format('%.5x', [Addr])), Vector2Create(0, 64) , 72, 1, WHITE);
 
     Listing := FDebugger.GetListing(Addr, 6, 30);
     for I := 0 to Min(25, High(Listing)) do
@@ -498,14 +539,16 @@ begin
   with FKeyboardMap do
   begin
     Clear;
-    Add(keyEnter, [KEY_ENTER]);
+    Add(keyEnter, [KEY_ENTER, KEY_KP_ENTER]);
     Add(keySpace, [KEY_SPACE]);
     Add(keyEsc, [KEY_ESCAPE]);
     Add(keyBackspace, [KEY_BACKSPACE]);
     Add(keyLeftShift, [KEY_LEFT_SHIFT]);
-    Add(keyRightShift, [KEY_RIGHT_SHIFT]);
+    Add(keyRightShift, [KEY_RIGHT_SHIFT, KEY_KP_ADD]);
     Add(keyLeftControl, [KEY_LEFT_CONTROL]);
     Add(keyRightControl, [KEY_RIGHT_CONTROL]);
+    Add(keyLeftAlt, [KEY_LEFT_ALT]);
+    Add(keyRightAlt, [KEY_RIGHT_ALT]);
     Add(keyF1, [KEY_F1]);
     Add(keyF2, [KEY_F2]);
     Add(keyF3, [KEY_F3]);
@@ -523,7 +566,7 @@ begin
     Add(keyD5, [KEY_FIVE]);
     Add(keyD6, [KEY_SIX]);
     Add(keyD7, [KEY_SEVEN]);
-    Add(keyD8, [KEY_EIGHT]);
+    Add(keyD8, [KEY_EIGHT, KEY_KP_ADD]);
     Add(keyD9, [KEY_NINE]);
     Add(keyD0, [KEY_ZERO]);
     Add(keyA, [KEY_A]);
@@ -562,6 +605,20 @@ begin
     Add(keyNumPad8, [KEY_KP_8, KEY_UP]);
     Add(keyNumPad9, [KEY_KP_9, KEY_PAGE_UP]);
     Add(keyNumPad0, [KEY_KP_0, KEY_INSERT]);
+    Add(keyDecimal, [KEY_KP_DECIMAL, KEY_DELETE]);
+    Add(keyPeriod, [KEY_PERIOD]);
+    Add(keyComma, [KEY_COMMA]);
+    Add(keyMinus, [KEY_MINUS, KEY_KP_SUBTRACT]);
+    Add(keyEqual, [KEY_EQUAL, KEY_KP_ADD, KEY_KP_MULTIPLY, KEY_KP_DIVIDE]);
+    Add(keyApostrophe, [KEY_APOSTROPHE]);
+    Add(keyLeftBracket, [KEY_LEFT_BRACKET]);
+    Add(keyRightBracket, [KEY_RIGHT_BRACKET]);
+    Add(keyGrave, [KEY_GRAVE]);
+    Add(keySlash, [KEY_SLASH]);
+    Add(keySemiColon, [KEY_SEMICOLON]);
+    Add(keyBackSlash, [KEY_BACKSLASH]);
+    Add(keyNumLock, [KEY_NUM_LOCK]);
+    Add(keyTab, [KEY_TAB]);
   end;
 end;
 
@@ -626,7 +683,6 @@ begin
         Cpu.Registers.IP := $0;
         Cpu.Registers.SP := $FFFE;
         TestProgram.Free;
-        //Cpu.MemoryBus.InvokeWrite(Nil, $41C, $20);
         Result := True
       end;
   end;
@@ -663,6 +719,18 @@ begin
   Result := FStepByStep;
 end;
 
+procedure TApp.OnBeforeExecution(ASender: TObject; AInstruction: TInstruction);
+var
+  Cpu: TCpu8088 absolute ASender;
+  DumpFrame: Dump.TDumpFrame;
+begin
+  if not Assigned(FDumpStream) then Exit;
+  DumpFrame := BuldDumpFrame(Cpu, (AInstruction.CS shl 4) + AInstruction.IP);
+  DumpFrame.CS := AInstruction.CS;
+  DumpFrame.IP := AInstruction.IP;
+  FDumpStream.Write(DumpFrame, SizeOf(DumpFrame));
+end;
+
 procedure TApp.OnAfterInstruction(ASender: TObject; AInstruction: TInstruction);
 var
   Line: String;
@@ -670,31 +738,6 @@ var
   Frame: TDumpFrame;
   Cpu: TCpu8088 absolute ASender;
 begin
-  Frame.PhysicalAddress := (AInstruction.CS shl 4) + AInstruction.IP;
-  Frame.CodeLenth := AInstruction.Length;
-  Frame.CodeBytes := AInstruction.Code;
-
-  Frame.AX := Cpu.Registers.AX;
-  Frame.BX := Cpu.Registers.BX;
-  Frame.CX := Cpu.Registers.CX;
-  Frame.DX := Cpu.Registers.DX;
-  Frame.BP := Cpu.Registers.BP;
-  Frame.SP := Cpu.Registers.SP;
-  Frame.SI := Cpu.Registers.SI;
-  Frame.DI := Cpu.Registers.DI;
-  Frame.CS := Cpu.Registers.CS;
-  Frame.DS := Cpu.Registers.DS;
-  Frame.SS := Cpu.Registers.SS;
-  Frame.ES := Cpu.Registers.ES;
-  Frame.IP := Cpu.Registers.IP;
-  Frame.Flags := Cpu.Registers.Flags.GetWord;
-
-  //FDumpStream.Write(Frame, SizeOf(Frame));
-
-  //if (AInstruction.CS = $C000) then FDebug := True;
-
-  //FDebug := AInstruction.CS = $60;
-
   //if (AInstruction.CS = $C000) then FKeybEnabled := False;
 
   if FDebug or FStepByStep then
@@ -704,7 +747,6 @@ begin
       FDebugger.FindLine(AInstruction.CS, AInstruction.IP),
       TCpu8088(ASender).DumpCurrentInstruction
     ]));
-
 end;
 
 var
