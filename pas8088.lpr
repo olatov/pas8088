@@ -21,8 +21,9 @@ const
   Cycles = 1000000 div FPS;
 
   BiosFile = 'poisk_1991.bin';
-  CartFile = '/var/tmp/BASICC11.BIN';
-  BootstrapFile = ''; // '/var/tmp/cat.bin';
+  CartFile = 'BASICC11.BIN';
+  BootstrapFile = '';//  'test.bin';// '/home/oleg/soft/poisk/tape/km.cas';
+  DumpFile = '';
 
   DBG = False;
 
@@ -33,7 +34,7 @@ const
   VideoAddress = $B8000;
 
 var
-  Breakpoints: array of TPhysicalAddress = ($00000);
+  Breakpoints: array of TPhysicalAddress = ($00000, $600);
 
 type
   { TApp }
@@ -389,7 +390,7 @@ begin
         FDebugger.FindLine(ACpu.CurrentAddress)
       ]
     )),
-    Vector2Create(Left - 600, 0 * (FontSize + VertSpacing) + 0), CodeFontSize, 1, Color);
+    Vector2Create(Left - 800, 0 * (FontSize + VertSpacing) + 0), CodeFontSize, 1, Color);
 
   DrawTextEx(
     FFont,
@@ -725,6 +726,8 @@ var
   DumpFrame: Dump.TDumpFrame;
 begin
   if not Assigned(FDumpStream) then Exit;
+  if AInstruction.CS <> $C000 then Exit;
+
   DumpFrame := BuldDumpFrame(Cpu, (AInstruction.CS shl 4) + AInstruction.IP);
   DumpFrame.CS := AInstruction.CS;
   DumpFrame.IP := AInstruction.IP;
@@ -740,7 +743,7 @@ var
 begin
   //if (AInstruction.CS = $C000) then FKeybEnabled := False;
 
-  if FDebug or FStepByStep then
+  if (FDebug or FStepByStep) then
     WriteLn(Format('%.4x:%.4x | %-24s | %s ',
     [
       AInstruction.CS, AInstruction.IP,
