@@ -7,8 +7,8 @@ unit Cpu8088;
 interface
 
 uses
-  Classes, SysUtils, Math,
-  Hardware, StreamEx;
+  Classes, SysUtils, Math, BufStream, StreamEx,
+  Hardware;
 
 type
   TCpu8088 = class;
@@ -2179,7 +2179,8 @@ begin
   Old := ReadRM8(ModRM);
   CarryIn := IfThen(Registers.Flags.CF, 1, 0);
   Change := Registers.GetByIndex8(ModRM.Reg);
-  Result := Old + Change;
+  Result := Old;
+  Inc(Result, Change);
   Inc(Result, CarryIn);
   WriteRM8(ModRM, Byte(Result));
   Registers.Flags.UpdateAfterAdd8(Old, Change + CarryIn, Result);
@@ -2195,7 +2196,8 @@ begin
   Old := ReadRM16(ModRM);
   CarryIn := IfThen(Registers.Flags.CF, 1, 0);
   Change := Registers.GetByIndex16(ModRM.Reg);
-  Result := Old + Change;
+  Result := Old;
+  Inc(Result, Change);
   Inc(Result, CarryIn);
   WriteRM16(ModRM, Word(Result));
   Registers.Flags.UpdateAfterAdd16(Old, Change + CarryIn, Result);
@@ -2212,7 +2214,8 @@ begin
   Old := Registers.GetByIndex8(ModRM.Reg);
   CarryIn := IfThen(Registers.Flags.CF, 1, 0);
   Change := ReadRM8(ModRM);
-  Result := Old + Change;
+  Result := Old;
+  Inc(Result, Change);
   Inc(Result, CarryIn);
   Registers.SetByIndex8(ModRM.Reg, Byte(Result));
   Registers.Flags.UpdateAfterAdd16(Old, Change, Result);
@@ -2229,7 +2232,8 @@ begin
   Old := Registers.GetByIndex16(ModRM.Reg);
   CarryIn := IfThen(Registers.Flags.CF, 1, 0);
   Change := ReadRM16(ModRM);
-  Result := Old + Change;
+  Result := Old;
+  Inc(Result, Change);
   Inc(Result, CarryIn);
   Registers.SetByIndex16(ModRM.Reg, Word(Result));
   Registers.Flags.UpdateAfterAdd16(Old, Change, Result);
@@ -2243,7 +2247,8 @@ begin
   Old := Registers.AL;
   CarryIn := IfThen(Registers.Flags.CF, 1, 0);
   Change := FetchCodeByte;
-  Result := Old + Change;
+  Result := Old;
+  Inc(Result, Change);
   Inc(Result, CarryIn);
   Registers.AL := Byte(Result);
   Registers.Flags.UpdateAfterAdd8(Old, Change + CarryIn, Result);
@@ -2257,7 +2262,8 @@ begin
   Old := Registers.AX;
   CarryIn := IfThen(Registers.Flags.CF, 1, 0);
   Change := FetchCodeWord;
-  Result := Registers.AX + Change;
+  Result := Registers.AX;
+  Inc(Result, Change);
   Inc(Result, CarryIn);
   Registers.AX := Word(Result);
   Registers.Flags.UpdateAfterAdd16(Old, Change + CarryIn, Result);
@@ -2281,7 +2287,8 @@ begin
   Old := Registers.AL;
   CarryIn := IfThen(Registers.Flags.CF, 1, 0);
   Change := FetchCodeByte;
-  Result := Old - Change;
+  Result := Old;
+  Dec(Result, Change);
   Dec(Result, CarryIn);
   Registers.AL := Byte(Result);
   Registers.Flags.UpdateAfterSub8(Old, Change, CarryIn, Result);
@@ -2295,7 +2302,8 @@ begin
   Old := Registers.AX;
   CarryIn := IfThen(Registers.Flags.CF, 1, 0);
   Change := FetchCodeWord;
-  Result := Old - Change;
+  Result := Old;
+  Dec(Result, Change);
   Dec(Result, CarryIn);
   Registers.AX := Word(Result);
   Registers.Flags.UpdateAfterSub16(Old, Change, CarryIn, Result);
@@ -2823,7 +2831,6 @@ procedure TCpu8088.HandleGRP1RM16Imm8;
 var
   ModRM: TModRM;
   Imm: Int8;
-  A, B: Integer;
 begin
   ModRM := FetchModRM;
   Imm := FetchCodeByte;
@@ -2888,7 +2895,8 @@ begin
   Old := ReadRM8(ModRM);
   CarryIn := IfThen(Registers.Flags.CF, 1, 0);
   Change := Registers.GetByIndex8(ModRM.Reg);
-  Result := Old - Change;
+  Result := Old;
+  Dec(Result, Change);
   Dec(Result, CarryIn);
   WriteRM8(ModRM, Byte(Result));
   Registers.Flags.UpdateAfterSub8(Old, Change, CarryIn, Result);
@@ -2905,7 +2913,7 @@ begin
   CarryIn := IfThen(Registers.Flags.CF, 1, 0);
   Change := Registers.GetByIndex16(ModRM.Reg);
   Result := Old;
-  Result := Result - Change;
+  Dec(Result, Change);
   Dec(Result, CarryIn);
   WriteRM16(ModRM, Word(Result));
   Registers.Flags.UpdateAfterSub16(Old, Change, CarryIn, Result);
@@ -2921,7 +2929,8 @@ begin
   Old := Registers.GetByIndex8(ModRM.Reg);
   CarryIn := IfThen(Registers.Flags.CF, 1, 0);
   Change := ReadRM8(ModRM);
-  Result := Old - Change;
+  Result := Old;
+  Dec(Result, Change);
   Dec(Result, CarryIn);
   Registers.SetByIndex8(ModRM.Reg, Word(Result));
   Registers.Flags.UpdateAfterSub8(Old, Change, CarryIn, Result);
@@ -2938,7 +2947,7 @@ begin
   CarryIn := IfThen(Registers.Flags.CF, 1, 0);
   Change := ReadRM16(ModRM);
   Result := Old;
-  Result := Result - Change;
+  Dec(Result, Change);
   Dec(Result, CarryIn);
   Registers.SetByIndex16(ModRM.Reg, Word(Result));
   Registers.Flags.UpdateAfterSub16(Old, Change, CarryIn, Result);
@@ -3739,7 +3748,8 @@ var
   Result: Int32;
 begin
   Old := ReadRM16(AModRM);
-  Result := Old - AImm;
+  Result := Old;
+  Dec(Result, AImm);
   WriteRM16(AModRM, Word(Result));
   Registers.Flags.UpdateAfterSub16(Old, AImm, 0, Result);
 end;
@@ -3752,7 +3762,7 @@ begin
   Old := ReadRM8(AModRM);
   CarryIn := IfThen(Registers.Flags.CF, 1, 0);
   Result := Old;
-  Result := Result - AImm;
+  Dec(Result, AImm);
   Dec(Result, CarryIn);
   WriteRM8(AModRM, Byte(Result));
   Registers.Flags.UpdateAfterSub8(Old, AImm, CarryIn, Result);
@@ -3766,7 +3776,7 @@ begin
   Old := ReadRM16(AModRM);
   CarryIn := IfThen(Registers.Flags.CF, 1, 0);
   Result := Old;
-  Result := Result - AImm;
+  Dec(Result, AImm);
   Dec(Result, CarryIn);
   WriteRM16(AModRM, Word(Result));
   Registers.Flags.UpdateAfterSub16(Old, AImm, CarryIn, Result);
@@ -3778,7 +3788,8 @@ var
   Result: Int16;
 begin
   Old := ReadRM8(AModRM);
-  Result := Old - AImm;
+  Result := Old;
+  Dec(Result, AImm);
   WriteRM8(AModRM, Byte(Result));
   Registers.Flags.UpdateAfterSub8(Old, AImm, 0, Result);
 end;
@@ -3859,17 +3870,11 @@ end;
 
 procedure TCpu8088.Cmp8(AFirst, ASecond: Byte);
 begin
-  LogDebug('[%.4x:%.4X] [CMP8] (%d), (%d)', [
-      FCurrentInstruction.CS, FCurrentInstruction.IP, AFirst, ASecond]);
-
   Registers.Flags.UpdateAfterSub8(AFirst, ASecond, 0, AFirst - ASecond);
 end;
 
 procedure TCpu8088.Cmp16(AFirst, ASecond: Word);
 begin
-  LogDebug('[%.4x:%.4X] [CMP16] (%d), (%d)', [
-      FCurrentInstruction.CS, FCurrentInstruction.IP, AFirst, ASecond]);
-
   Registers.Flags.UpdateAfterSub16(AFirst, ASecond, 0, AFirst - ASecond);
 end;
 
@@ -4393,13 +4398,22 @@ begin
 end;
 
 constructor TCpu8088.Create(AOwner: TComponent);
+var
+  BufStream: TWriteBufStream;
 begin
   inherited Create(AOwner);
   Registers := TRegisters.Create(Self);
   InitInstructionHandlers;
   Reset;
 
-  //FDebugWriter := TStreamWriter.Create('/tmp/debug.txt', False, TEncoding.UTF8, 1024 * 1024 * 16);
+  {
+  BufStream := TWriteBufStream.Create(
+    TFileStream.Create('/tmp/debug.txt', fmCreate));
+  BufStream.SourceOwner := True;
+
+  FDebugWriter := TStreamWriter.Create(BufStream);
+  FDebugWriter.OwnStream;
+  }
 end;
 
 destructor TCpu8088.Destroy;
