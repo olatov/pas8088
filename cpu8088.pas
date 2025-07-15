@@ -304,15 +304,16 @@ type
     procedure HandleAndRM16Reg16;  { $21 }
     procedure HandleAndReg8RM8;  { $22 }
     procedure HandleAndReg16RM16;  { $23 }
-    procedure HandleAndALImm8;  { 24 }
-    procedure HandleAndAXImm16;  { 25 }
-    procedure HandleDaa;  { 27 }
+    procedure HandleAndALImm8;  { $24 }
+    procedure HandleAndAXImm16;  { $25 }
+    procedure HandleDaa;  { $27 }
     procedure HandleSubRM8Reg8;  { $28 }
     procedure HandleSubRM16Reg16;  { $29 }
     procedure HandleSubReg8RM8;  { $2A }
     procedure HandleSubReg16RM16;  { $2B }
     procedure HandleSubALImm8;  { $2C }
     procedure HandleSubAXImm16;  { $2D }
+    procedure HandleDas;  { $2F }
 
     procedure HandleXorRM8Reg8;  { $30 }
     procedure HandleXorRM16Reg16;  { $31 }
@@ -320,12 +321,14 @@ type
     procedure HandleXorReg16RM16;  { $33 }
     procedure HandleXorALImm8;   { $34 }
     procedure HandleXorAXImm16;  { $35 }
+    procedure HandleAaa;  { $37; }
     procedure HandleCmpRM8Reg8;  { $38 }
     procedure HandleCmpRM16Reg16;  { $39 }
     procedure HandleCmpReg8RM8;  { $3A }
     procedure HandleCmpReg16RM16;  { $3B }
     procedure HandleCmpALImm8;  { $3C }
     procedure HandleCmpAXImm16;  { $3D }
+    procedure HandleAas;  { $3F }
 
     procedure HandleIncReg16;  { $40..47 }
     procedure HandleDecReg16;  { $48..4F }
@@ -410,11 +413,13 @@ type
     procedure HandleInto;  { $CE }
     procedure HandleIret;  { $CF }
 
-    procedure HandleGRP2RM8Const1; { D0 }
-    procedure HandleGRP2RM16Const1; { D1 }
-    procedure HandleGRP2RM8CL; { D2 }
-    procedure HandleGRP2RM16CL; { D3 }
-    procedure HandleXlat;  { D7 }
+    procedure HandleGRP2RM8Const1; { $D0 }
+    procedure HandleGRP2RM16Const1; { $D1 }
+    procedure HandleGRP2RM8CL; { $D2 }
+    procedure HandleGRP2RM16CL; { $D3 }
+    procedure HandleAam;  { $D4 }
+    procedure HandleAad;  { $D5 }
+    procedure HandleXlat;  { $D7 }
 
     procedure HandleLoope;  { $E0 }
     procedure HandleLoopne;  { $E1 }
@@ -1823,7 +1828,6 @@ begin
       $24:      FInstructionHandlers[I] := @HandleAndALImm8;
       $25:      FInstructionHandlers[I] := @HandleAndAXImm16;
       { $26 ES: [prefix] }
-      { $27 DAA }
       $27:      FInstructionHandlers[I] := @HandleDaa;
       $28:      FInstructionHandlers[I] := @HandleSubRM8Reg8;
       $29:      FInstructionHandlers[I] := @HandleSubRM16Reg16;
@@ -1832,7 +1836,7 @@ begin
       $2C:      FInstructionHandlers[I] := @HandleSubALImm8;
       $2D:      FInstructionHandlers[I] := @HandleSubAXImm16;
       { $2E CS: [prefix] }
-      { $2F DAS }
+      $2F:      FInstructionHandlers[I] := @HandleDas;
       $30:      FInstructionHandlers[I] := @HandleXorRM8Reg8;
       $31:      FInstructionHandlers[I] := @HandleXorRM16Reg16;
       $32:      FInstructionHandlers[I] := @HandleXorReg8RM8;
@@ -1840,7 +1844,7 @@ begin
       $34:      FInstructionHandlers[I] := @HandleXorALImm8;
       $35:      FInstructionHandlers[I] := @HandleXorAXImm16;
       { $36 SS: [prefix] }
-      { $37 AAA }
+      $37:      FInstructionHandlers[I] := @HandleAaa;
       $38:      FInstructionHandlers[I] := @HandleCmpRM8Reg8;
       $39:      FInstructionHandlers[I] := @HandleCmpRM16Reg16;
       $3A:      FInstructionHandlers[I] := @HandleCmpReg8RM8;
@@ -1848,28 +1852,28 @@ begin
       $3C:      FInstructionHandlers[I] := @HandleCmpALImm8;
       $3D:      FInstructionHandlers[I] := @HandleCmpAXImm16;
       { $3E DS: [prefix] }
-      { $3F AAS }
+      $3F:      FInstructionHandlers[I] := @HandleAas;
       $40..$47: FInstructionHandlers[I] := @HandleIncReg16;
       $48..$4F: FInstructionHandlers[I] := @HandleDecReg16;
       $50..$57: FInstructionHandlers[I] := @HandlePushReg16;
       $58..$5F: FInstructionHandlers[I] := @HandlePopReg16;
       { $60..$6F [n/a] }
-      $70, $60:      FInstructionHandlers[I] := @HandleJoShort;
-      $71, $61:      FInstructionHandlers[I] := @HandleJnoShort;
-      $72, $62:      FInstructionHandlers[I] := @HandleJbShort;
-      $73, $63:      FInstructionHandlers[I] := @HandleJaeShort;
-      $74, $64:      FInstructionHandlers[I] := @HandleJeShort;
-      $75, $65:      FInstructionHandlers[I] := @HandleJneShort;
-      $76, $66:      FInstructionHandlers[I] := @HandleJbeShort;
-      $77, $67:      FInstructionHandlers[I] := @HandleJaShort;
-      $78, $68:      FInstructionHandlers[I] := @HandleJsShort;
-      $79, $69:      FInstructionHandlers[I] := @HandleJnsShort;
-      $7A, $6A:      FInstructionHandlers[I] := @HandleJpeShort;
-      $7B, $6B:      FInstructionHandlers[I] := @HandleJpoShort;
-      $7C, $6C:      FInstructionHandlers[I] := @HandleJngeShort;
-      $7D, $6D:      FInstructionHandlers[I] := @HandleJnlShort;
-      $7E, $6E:      FInstructionHandlers[I] := @HandleJngShort;
-      $7F, $6F:      FInstructionHandlers[I] := @HandleJgShort;
+      $70, $60: FInstructionHandlers[I] := @HandleJoShort;
+      $71, $61: FInstructionHandlers[I] := @HandleJnoShort;
+      $72, $62: FInstructionHandlers[I] := @HandleJbShort;
+      $73, $63: FInstructionHandlers[I] := @HandleJaeShort;
+      $74, $64: FInstructionHandlers[I] := @HandleJeShort;
+      $75, $65: FInstructionHandlers[I] := @HandleJneShort;
+      $76, $66: FInstructionHandlers[I] := @HandleJbeShort;
+      $77, $67: FInstructionHandlers[I] := @HandleJaShort;
+      $78, $68: FInstructionHandlers[I] := @HandleJsShort;
+      $79, $69: FInstructionHandlers[I] := @HandleJnsShort;
+      $7A, $6A: FInstructionHandlers[I] := @HandleJpeShort;
+      $7B, $6B: FInstructionHandlers[I] := @HandleJpoShort;
+      $7C, $6C: FInstructionHandlers[I] := @HandleJngeShort;
+      $7D, $6D: FInstructionHandlers[I] := @HandleJnlShort;
+      $7E, $6E: FInstructionHandlers[I] := @HandleJngShort;
+      $7F, $6F: FInstructionHandlers[I] := @HandleJgShort;
       $80, $82: FInstructionHandlers[I] := @HandleGRP1RM8Imm8;
       $81:      FInstructionHandlers[I] := @HandleGRP1RM16Imm16;
       $83:      FInstructionHandlers[I] := @HandleGRP1RM16Imm8;
@@ -1890,7 +1894,7 @@ begin
       $98:      FInstructionHandlers[I] := @HandleCbw;
       $99:      FInstructionHandlers[I] := @HandleCwd;
       $9A:      FInstructionHandlers[I] := @HandleCallFar;
-      { $9B WAIT }
+      $9B:      FInstructionHandlers[I] := @HandleWait;
       $9C:      FInstructionHandlers[I] := @HandlePushf;
       $9D:      FInstructionHandlers[I] := @HandlePopf;
       $9E:      FInstructionHandlers[I] := @HandleSahf;
@@ -1931,8 +1935,8 @@ begin
       $D1:      FInstructionHandlers[I] := @HandleGRP2RM16Const1;
       $D2:      FInstructionHandlers[I] := @HandleGRP2RM8CL;
       $D3:      FInstructionHandlers[I] := @HandleGRP2RM16CL;
-      { $D4 AAM }
-      { $D5 AAD }
+      $D4:      FInstructionHandlers[I] := @HandleAam;
+      $D5:      FInstructionHandlers[I] := @HandleAad;
       { $D6 [n/a] }
       $D7:      FInstructionHandlers[I] := @HandleXlat;
       $D8..$DF: FInstructionHandlers[I] := @HandleFpuInstruction; { fpu, fetch but do nothing }
@@ -1976,7 +1980,7 @@ end;
 procedure TCpu8088.HandleInvalidInstruction;
 begin
   raise Exception.CreateFmt(
-    'Opcode not supported: %.2x at %.4x:%.4x', [
+    'Invalid opcode: %.2x at %.4x:%.4x', [
       FCurrentInstruction.OpCode, FCurrentInstruction.CS, FCurrentInstruction.IP
     ]);
 end;
@@ -2422,6 +2426,11 @@ begin
   Registers.Flags.UpdateAfterSub16(Old, Change, 0, Result);
 end;
 
+procedure TCpu8088.HandleDas;
+begin
+  raise Exception.Create('Not implemented: DAS');
+end;
+
 procedure TCpu8088.HandleSubRM8Reg8;
 var
   ModRM: TModRM;
@@ -2534,6 +2543,11 @@ begin
   Registers.Flags.UpdateAfterXor16(Registers.AX);
 end;
 
+procedure TCpu8088.HandleAaa;
+begin
+  raise Exception.Create('Not implemented: AAA');
+end;
+
 procedure TCpu8088.HandleCmpRM8Reg8;
 var
   ModRM: TModRM;
@@ -2574,6 +2588,11 @@ end;
 procedure TCpu8088.HandleCmpAXImm16;
 begin
   Cmp16(Registers.AX, FetchCodeWord);
+end;
+
+procedure TCpu8088.HandleAas;
+begin
+  raise Exception.Create('Not implemented: AAS');
 end;
 
 procedure TCpu8088.HandleNop;
@@ -2648,116 +2667,116 @@ end;
 
 procedure TCpu8088.HandleJbShort;
 var
-  Param: Int8;
+  displacement: Int8;
 begin
-  Param := Int8(FetchCodeByte);
-  if Registers.Flags.CF then JumpShort(Param);
+  displacement := Int8(FetchCodeByte);
+  if Registers.Flags.CF then JumpShort(displacement);
 end;
 
 procedure TCpu8088.HandleJaeShort;
 var
-  Param: Int8;
+  Displacement: Int8;
 begin
-  Param := Int8(FetchCodeByte);
-  if not Registers.Flags.CF then JumpShort(Param);
+  Displacement := Int8(FetchCodeByte);
+  if not Registers.Flags.CF then JumpShort(Displacement);
 end;
 
 procedure TCpu8088.HandleJeShort;
 var
-  Param: Int8;
+  Displacement: Int8;
 begin
-  Param := Int8(FetchCodeByte);
-  if Registers.Flags.ZF then JumpShort(Param);
+  Displacement := Int8(FetchCodeByte);
+  if Registers.Flags.ZF then JumpShort(Displacement);
 end;
 
 procedure TCpu8088.HandleJneShort;
 var
-  Param: Int8;
+  Displacement: Int8;
 begin
-  Param := Int8(FetchCodeByte);
-  if not Registers.Flags.ZF then JumpShort(Param);
+  Displacement := Int8(FetchCodeByte);
+  if not Registers.Flags.ZF then JumpShort(Displacement);
 end;
 
 procedure TCpu8088.HandleJbeShort;
 var
-  Param: Int8;
+  Displacement: Int8;
 begin
-  Param := Int8(FetchCodeByte);
-  if Registers.Flags.CF or Registers.Flags.ZF then JumpShort(Param);
+  Displacement := Int8(FetchCodeByte);
+  if Registers.Flags.CF or Registers.Flags.ZF then JumpShort(Displacement);
 end;
 
 procedure TCpu8088.HandleJaShort;
 var
-  Param: Int8;
+  Displacement: Int8;
 begin
-  Param := Int8(FetchCodeByte);
-  if not (Registers.Flags.CF or Registers.Flags.ZF) then JumpShort(Param);
+  Displacement := Int8(FetchCodeByte);
+  if not (Registers.Flags.CF or Registers.Flags.ZF) then JumpShort(Displacement);
 end;
 
 procedure TCpu8088.HandleJsShort;
 var
-  Param: Int8;
+  Displacement: Int8;
 begin
-  Param := Int8(FetchCodeByte);
-  if Registers.Flags.SF then JumpShort(Param);
+  Displacement := Int8(FetchCodeByte);
+  if Registers.Flags.SF then JumpShort(Displacement);
 end;
 
 procedure TCpu8088.HandleJnsShort;
 var
-  Param: Int8;
+  Displacement: Int8;
 begin
-  Param := Int8(FetchCodeByte);
-  if not Registers.Flags.SF then JumpShort(Param);
+  Displacement := Int8(FetchCodeByte);
+  if not Registers.Flags.SF then JumpShort(Displacement);
 end;
 
 procedure TCpu8088.HandleJpeShort;
 var
-  Param: Int8;
+  Displacement: Int8;
 begin
-  Param := Int8(FetchCodeByte);
-  if Registers.Flags.PF then JumpShort(Param);
+  Displacement := Int8(FetchCodeByte);
+  if Registers.Flags.PF then JumpShort(Displacement);
 end;
 
 procedure TCpu8088.HandleJpoShort;
 var
-  Param: Int8;
+  Displacement: Int8;
 begin
-  Param := Int8(FetchCodeByte);
-  if not Registers.Flags.PF then JumpShort(Param);
+  Displacement := Int8(FetchCodeByte);
+  if not Registers.Flags.PF then JumpShort(Displacement);
 end;
 
 procedure TCpu8088.HandleJngeShort;
 var
-  Param: Int8;
+  Displacement: Int8;
 begin
-  Param := Int8(FetchCodeByte);
-   if Registers.Flags.SF <> Registers.Flags.OF_ then JumpShort(Param);
+  Displacement := Int8(FetchCodeByte);
+   if Registers.Flags.SF <> Registers.Flags.OF_ then JumpShort(Displacement);
 end;
 
 procedure TCpu8088.HandleJnlShort;
 var
-  Param: Int8;
+  Displacement: Int8;
 begin
-  Param := Int8(FetchCodeByte);
-  if Registers.Flags.SF = Registers.Flags.OF_ then JumpShort(Param);
+  Displacement := Int8(FetchCodeByte);
+  if Registers.Flags.SF = Registers.Flags.OF_ then JumpShort(Displacement);
 end;
 
 procedure TCpu8088.HandleJngShort;
 var
-  Param: Int8;
+  Displacement: Int8;
 begin
-  Param := Int8(FetchCodeByte);
+  Displacement := Int8(FetchCodeByte);
   if Registers.Flags.ZF or (Registers.Flags.SF <> Registers.Flags.OF_) then
-    JumpShort(Param);
+    JumpShort(Displacement);
 end;
 
 procedure TCpu8088.HandleJgShort;
 var
-  Param: Int8;
+  Displacement: Int8;
 begin
-  Param := Int8(FetchCodeByte);
+  Displacement := Int8(FetchCodeByte);
   if not Registers.Flags.ZF and (Registers.Flags.SF = Registers.Flags.OF_) then
-    JumpShort(Param);
+    JumpShort(Displacement);
 end;
 
 procedure TCpu8088.HandleGRP1RM8Imm8;
@@ -2927,44 +2946,34 @@ end;
 
 procedure TCpu8088.HandleMovRM8Reg8;
 var
-  Param: TModRM;
-  SourceIndex: TRegisters.TRegIndex8;
+  ModRM: TModRM;
 begin
-  Param := FetchModRM;
-  SourceIndex := TRegisters.TRegIndex8(Param.Reg);
-  WriteRM8(Param, Registers.GetByIndex8(SourceIndex));
+  ModRM := FetchModRM;
+  WriteRM8(ModRM, Registers.GetByIndex8(ModRM.Reg));
 end;
 
 procedure TCpu8088.HandleMovRM16Reg16;
 var
-  Param: TModRM;
+  ModRM: TModRM;
 begin
-  Param := FetchModRM;
-  WriteRM16(Param, Registers.GetByIndex16(Param.Reg));
+  ModRM := FetchModRM;
+  WriteRM16(ModRM, Registers.GetByIndex16(ModRM.Reg));
 end;
 
 procedure TCpu8088.HandleMovReg8RM8;
 var
-  Param: TModRM;
-  DestIndex: TRegisters.TRegIndex8;
-  Data: Byte;
+  ModRM: TModRM;
 begin
-  Param := FetchModRM;
-  Data := ReadRM8(Param);
-  DestIndex := TRegisters.TRegIndex8(Param.Reg);
-  Registers.SetByIndex8(DestIndex, Data);
+  ModRM := FetchModRM;
+  Registers.SetByIndex8(ModRM.Reg, ReadRM8(ModRM));
 end;
 
 procedure TCpu8088.HandleMovReg16RM16;
 var
-  Param: TModRM;
-  DestIndex: TRegisters.TRegIndex16;
-  Data: Word;
+  ModRM: TModRM;
 begin
-  Param := FetchModRM;
-  Data := ReadRM16(Param);
-  DestIndex := TRegisters.TRegIndex16(Param.Reg);
-  Registers.SetByIndex16(DestIndex, Data);
+  ModRM := FetchModRM;
+  Registers.SetByIndex16(ModRM.Reg, ReadRM16(ModRM));
 end;
 
 procedure TCpu8088.HandleMovRM16Sreg;
@@ -2985,14 +2994,10 @@ end;
 
 procedure TCpu8088.HandleMovSRegRM16;
 var
-  Param: TModRM;
-  DestIndex: TRegisters.TRegIndex16;
-  Data: Word;
+  ModRM: TModRM;
 begin
-  Param := FetchModRM;
-  Data := ReadRM16(Param);
-  DestIndex := TRegisters.TRegIndex16(Param.Reg + 8);
-  Registers.SetByIndex16(DestIndex, Data);
+  ModRM := FetchModRM;
+  Registers.SetByIndex16(Ord(riES) + ModRM.Reg, ReadRM16(ModRM));
 end;
 
 procedure TCpu8088.HandlePopRM16;
@@ -3172,11 +3177,8 @@ begin
 end;
 
 procedure TCpu8088.HandleJmpShort;
-var
-  Param: Int8;
 begin
-  Param := Int8(FetchCodeByte);
-  JumpShort(Param);
+  JumpShort(FetchCodeByte);
 end;
 
 procedure TCpu8088.HandleInALDX;
@@ -3414,6 +3416,16 @@ begin
   end;
 end;
 
+procedure TCpu8088.HandleAam;
+begin
+  raise Exception.Create('Not implemented: AAM');
+end;
+
+procedure TCpu8088.HandleAad;
+begin
+  raise Exception.Create('Not implemented: AAD');
+end;
+
 procedure TCpu8088.HandleXlat;
 begin
   Registers.AL := ReadMemoryByte(DataSegment, Registers.BX + Registers.AL);
@@ -3449,10 +3461,10 @@ end;
 
 procedure TCpu8088.HandleJcxz;
 var
-  Param: Int8;
+  Displacement: Int8;
 begin
-  Param := Int8(FetchCodeByte);
-  if Registers.CX = 0 then JumpShort(Param);
+  Displacement := Int8(FetchCodeByte);
+  if Registers.CX = 0 then JumpShort(Displacement);
 end;
 
 procedure TCpu8088.HandleInALImm8;
