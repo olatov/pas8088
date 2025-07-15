@@ -8,7 +8,7 @@ interface
 
 uses
   Classes, SysUtils, Math,
-  Hardware;
+  Hardware, StreamEx;
 
 type
   TCpu8088 = class;
@@ -212,6 +212,8 @@ type
     procedure DecRM16(AModRM: TModRM);
     procedure EnterISR(ANumber: Byte);
     procedure ExecuteCurrentInstruction;
+    procedure LogDebug(ALine: String);
+    procedure LogDebug(AFmt: String; AArgs: array of const);
     function Pop(ASegment: Word): Word;
     procedure Push(AValue: Word; ASegment: Word);
     procedure RaiseSoftwareInterrupt(ANumber: Byte);
@@ -219,6 +221,7 @@ type
     procedure WriteMemoryWord(ASegment, AOffset: Word; AData: Word);
     procedure WriteMemoryByte(ASegment, AOffset: Word; AData: Byte);
   private
+    FDebugWriter: TStreamWriter;
     FHalted: Boolean;
     FOnAfterInstruction: TInstructionNotifyEvent;
     FOnBeforeInstruction: TInstructionHook;
@@ -526,6 +529,7 @@ type
     procedure RaiseNmi;
     procedure RaiseHardwareInterrupt(ANumber: Byte);
     constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
     procedure Reset;
     procedure Tick;
     procedure FetchInstruction;
@@ -2800,6 +2804,7 @@ procedure TCpu8088.HandleGRP1RM16Imm8;
 var
   ModRM: TModRM;
   Imm: Int8;
+  A, B: Integer;
 begin
   ModRM := FetchModRM;
   Imm := FetchCodeByte;
@@ -2810,7 +2815,7 @@ begin
     5: SubRM16Imm16(ModRM, Imm);
     7: Cmp16(ReadRM16(ModRm), Imm);
   else
-    raise Exception.CreateFmt('Not implemented: %d', [ModRM.Reg]);
+    raise Exception.CreateFmt('Not implemented: GRP1 /%d', [ModRM.Reg]);
   end;
 end;
 
@@ -3359,7 +3364,7 @@ begin
     5: ShrRM8Const1(ModRM);
     7: SarRM8Const1(ModRM);
   else
-    raise Exception.CreateFmt('Not implemented: %d', [ModRM.Reg]);
+    raise Exception.CreateFmt('Not implemented: GRP2 /%d', [ModRM.Reg]);
   end;
 end;
 
@@ -3377,7 +3382,7 @@ begin
     5: ShrRM16Const1(ModRM);
     7: SarRM16Const1(ModRM);
   else
-    raise Exception.CreateFmt('Not implemented: %d', [ModRM.Reg]);
+    raise Exception.CreateFmt('Not implemented: GRP2 /%d', [ModRM.Reg]);
   end;
 end;
 
@@ -3391,7 +3396,7 @@ begin
     5: ShrRM8CL(ModRM);
     7: SarRM8CL(ModRM);
   else
-    raise Exception.CreateFmt('Not implemented: %d', [ModRM.Reg]);
+    raise Exception.CreateFmt('Not implemented: GRP2 /%d', [ModRM.Reg]);
   end;
 end;
 
@@ -3405,7 +3410,7 @@ begin
     5: ShrRM16CL(ModRM);
     7: SarRM16CL(ModRM);
   else
-    raise Exception.CreateFmt('Not implemented: %d', [ModRM.Reg]);
+    raise Exception.CreateFmt('Not implemented: GRP2 /%d', [ModRM.Reg]);
   end;
 end;
 
@@ -3842,12 +3847,30 @@ end;
 
 procedure TCpu8088.Cmp8(AFirst, ASecond: Byte);
 begin
+  LogDebug('[%.4x:%.4X] [CMP8] (%d), (%d)', [
+      FCurrentInstruction.CS, FCurrentInstruction.IP, AFirst, ASecond]);
+
   Registers.Flags.UpdateAfterSub8(AFirst, ASecond, 0, AFirst - ASecond);
 end;
 
 procedure TCpu8088.Cmp16(AFirst, ASecond: Word);
 begin
+  LogDebug('[%.4x:%.4X] [CMP16] (%d), (%d)', [
+      FCurrentInstruction.CS, FCurrentInstruction.IP, AFirst, ASecond]);
+
   Registers.Flags.UpdateAfterSub16(AFirst, ASecond, 0, AFirst - ASecond);
+end;
+
+procedure TCpu8088.LogDebug(ALine: String);
+begin
+  if Registers.CS >= $F000 then Exit;
+  if Assigned(FDebugWriter) then FDebugWriter.WriteLine(ALine);
+end;
+
+procedure TCpu8088.LogDebug(AFmt: String; AArgs: array of const);
+begin
+  if Registers.CS >= $F000 then Exit;
+  if Assigned(FDebugWriter) then FDebugWriter.WriteLine(AFmt, AArgs);
 end;
 
 procedure TCpu8088.JumpShort(ADisplacement: Int8);
@@ -4363,6 +4386,14 @@ begin
   Registers := TRegisters.Create(Self);
   InitInstructionHandlers;
   Reset;
+
+  //FDebugWriter := TStreamWriter.Create('/tmp/debug.txt', False, TEncoding.UTF8, 1024 * 1024 * 16);
+end;
+
+destructor TCpu8088.Destroy;
+begin
+  inherited Destroy;
+  FDebugWriter.Free;
 end;
 
 procedure TCpu8088.Reset;

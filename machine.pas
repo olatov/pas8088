@@ -62,6 +62,7 @@ end;
 procedure TMachine.Tick;
 begin
   Cpu.Tick;
+  Video.Tick;
 end;
 
 procedure TMachine.Run(ATicks: Integer);

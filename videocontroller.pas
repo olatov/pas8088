@@ -17,7 +17,7 @@ const
   CGAMagenta = $aa00aa;
   CGABrown = $0055aa;
   CGALightGray = $aaaaaa;
-  CGADarkGray = $282828; { $555555 }
+  CGADarkGray = $181818; { $555555 }
   CGABrightBlue = $ff0000;
   CGABrightGreen = $00ff00;
   CGABrightCyan = $ffff00;
@@ -33,7 +33,14 @@ type
   TScanLine = array[0..High(TVideoCols)] of TColor;
   TCGAPallette = array[0..3] of TColor;
 
-var
+const
+  CGAColors: array[0..15] of TColor = (
+    CGABlack, CGABlue, CGAGreen, CGACyan,
+    CGARed, CGAMagenta, CGABrown, CGALightGray,
+    CGADarkGray, CGABrightBlue, CGABrightGreen, CGABrightCyan,
+    CGABrightRed, CGABrightMagenta, CGAYellow, CGAWhite
+  );
+
   CGAPallettes: array[0..4] of TCGAPallette = (
     { Palette 0, low intensity [00] }
     (CGABlack, CGAGreen, CGARed, CGABrown),
@@ -61,14 +68,10 @@ type
       TVideoMode = (vmText40, vmText80, vmGraphics320, vmGraphics640);
     const
       BaseSegment = $B800;
+      TicksPerFrame = 20000;
     procedure ActivateTrap(const AOffset: Word; const AData: Byte = 0);
   private
-    Tmp: Byte;
-    FBackgroundColor: TColor;
-    FGetActivePallette: TCGAPallette;
-    FActivePalletteIndex: Byte;
     FLatch: array[$28..$2A] of Byte;
-    FVideoModeSelector: Byte;
 
     {
       0  BGColor
@@ -86,20 +89,9 @@ type
       NmiDisable: 0..%1;
       Intensity: 0..%1;
       Pallette: 0..%1;
-      TextMode: 0..%1;
+      DisplayBank: 0..%1;
       HiRes: 0..%1;
     end;
-
-    {
-      0
-      1
-      2
-      3
-      4
-      5
-      6  VideoMode LoNibble
-      7  VideoMode LoNibble
-    }
 
     FPort6ARegister: bitpacked record
       Unused: 0..%111111;
@@ -109,12 +101,15 @@ type
     function GetActivePallette: TCGAPallette;
     function GetBitsPerPixel: Byte;
     function GetSegment: Word;
-    procedure SetBackgroundColor(AValue: TColor);
   private
     FIOBus: IIOBus;
     FMemoryBus: IMemoryBus;
     FNmiTrigger: INmiTrigger;
+    FTicks: QWord;
+    function GetBackgroundColor: TColor;
+    function GetHorizRatrace: Boolean;
     function GetScanlines(ANumber: TVideoRows): TScanline;
+    function GetVertRetrace: Boolean;
     property ActivePallette: TCGAPallette read GetActivePallette;
     property ActiveMode: TVideoMode read GetActiveMode;
     property Segment: Word read GetSegment;
@@ -122,7 +117,11 @@ type
   public
     property NmiTrigger: INmiTrigger read FNmiTrigger write FNmiTrigger;
     property ScanLines[ANumber: TVideoRows]: TScanLine read GetScanLines;
-    property BackgroundColor: TColor read FBackgroundColor;
+    property BackgroundColor: TColor read GetBackgroundColor;
+
+    procedure Tick;
+    property VertRetrace: Boolean read GetVertRetrace;
+    property HorizRetrace: Boolean read GetHorizRatrace;
 
     { Memory bus device API }
     function GetMemoryBus: IMemoryBus;
@@ -150,7 +149,7 @@ implementation
 function TVideoController.GetSegment: Word;
 begin
   case ActiveMode of
-    vmText40, vmText80: Result := BaseSegment + (FPort68Register.TextMode shl 10);
+    vmText40, vmText80: Result := BaseSegment + (FPort68Register.DisplayBank shl 10);
     vmGraphics320, vmGraphics640: Result := BaseSegment;
   end;
 end;
@@ -200,7 +199,7 @@ var
     Unused: 0..%111111;
   end;
 begin
-  Index.TextMode := FPort68Register.TextMode;
+  Index.TextMode := FPort68Register.DisplayBank;
   Index.HiRes := FPort68Register.HiRes;
   Index.Unused := 0;
 
@@ -214,17 +213,12 @@ begin
   end;
 end;
 
-procedure TVideoController.SetBackgroundColor(AValue: TColor);
-begin
-  if FBackgroundColor = AValue then Exit;
-  FBackgroundColor := AValue;
-end;
-
 function TVideoController.GetScanlines(ANumber: TVideoRows): TScanline;
 var
   I, J, K: Integer;
   Addr: Word;
   Data: Byte;
+  TextColor: TColor;
   Pallette: TCGAPallette;
   ColorIndex, ColorMask: Byte;
 begin
@@ -241,15 +235,64 @@ begin
   begin
     Data := ReadMemoryByte((Segment shl 4) + Addr);
 
-    for J := ((8 Div BitsPerPixel) - 1) downto 0 do
-    begin
-      ColorIndex := (Data shr (J * BitsPerPixel) and ColorMask);
-      for K := 0 to BitsPerPixel - 1 do
-        Result[I + K] := Pallette[ColorIndex];
-      Inc(I, BitsPerPixel);
+    case ActiveMode of
+      vmText80:
+        begin
+          { Todo - take from proper pallette? }
+          TextColor := specialize IfThen<TColor>(
+            (Data and $80) <> 0,
+              CGABrightCyan,
+              CGAWhite);
+
+          Result[I] := BackgroundColor;
+          Inc(I);
+
+          for J := 6 downto 0 do
+            Result[I - J + 6] := specialize IfThen<TColor>(
+              (Data and (1 shl J)) <> 0,
+                TextColor,
+                BackgroundColor);
+          Inc(I, 7);
+        end;
+    else
+      for J := ((8 Div BitsPerPixel) - 1) downto 0 do
+      begin
+        ColorIndex := (Data shr (J * BitsPerPixel) and ColorMask);
+        for K := 0 to BitsPerPixel - 1 do
+          Result[I + K] := Pallette[ColorIndex];
+        Inc(I, BitsPerPixel);
+      end;
+
     end;
+
     Inc(Addr);
   end;
+end;
+
+function TVideoController.GetVertRetrace: Boolean;
+begin
+  Result := FTicks < (TicksPerFrame div 25);
+end;
+
+procedure TVideoController.Tick;
+begin
+  Inc(FTicks);
+  if FTicks > TicksPerFrame then FTicks := 0;
+end;
+
+function TVideoController.GetBackgroundColor: TColor;
+var
+  PortByte: PByte;
+  ColorIndex: Byte;
+begin
+  PortByte := @FPort68Register;
+  ColorIndex := (PortByte^ and %111) or (FPort68Register.Intensity shl 3);
+  Result := CGAColors[ColorIndex];
+end;
+
+function TVideoController.GetHorizRatrace: Boolean;
+begin
+  Result := VertRetrace; { horribly incorrect but will do for now }
 end;
 
 function TVideoController.GetMemoryBus: IMemoryBus;
@@ -337,19 +380,16 @@ begin
         Result := True;
       end;
 
-    $3D4, $3D5, $3D8, $3D9:
-      begin
-        { Writeln(Format('CGA read %.x', [AAddress])); }
-        ActivateTrap(Lo(AAddress) or $4000);
-      end;
+    $3D4, $3D5, $3D8, $3D9: ActivateTrap(Lo(AAddress) or $4000);
 
     $3DA:
       begin
         { Todo }
-        { Writeln(Format('CGA read %.x', [AAddress])); }
-        Tmp := Tmp xor $08;
-        AData := Tmp;
-        Result := Result;
+        AData := 0;
+        if (VertRetrace or HorizRetrace) then AData := AData or $1;
+        if HorizRetrace then AData := AData or $8;
+        Result := True;
+        //Writeln('Read 3DA: ', AData);
       end;
 
   else
@@ -357,17 +397,26 @@ begin
   end;
 end;
 
-procedure TVideoController.OnIOWrite(Sender: IIOBusDevice; AAddress: Word;
-  AData: Byte);
+procedure TVideoController.OnIOWrite(
+  Sender: IIOBusDevice; AAddress: Word; AData: Byte);
 begin
   case AAddress of
-    $68:  Move(AData, FPort68Register, 1);
-    $6A:  Move(AData, FPort6ARegister, 1);
+    $68:
+      begin
+        Move(AData, FPort68Register, 1);
+        {
+        Writeln(Format('Port %.x write: %.2x :: %d',
+          [AAddress, AData,
+            FPort68Register.BackgroundColor]));
+          }
+      end;
 
-    $3D4, $3D5, $3D8, $3D9, $3DA:
-      Writeln(Format('CGA write %.x: %.2x', [AAddress, AData]));
+    $6A: Move(AData, FPort6ARegister, 1);
+
+    $3D4, $3D5, $3D8, $3D9:  ActivateTrap(Lo(AAddress) or $C000, AData);
+
+    $3DA: Writeln(Format('CGA write %.x: %.2x', [AAddress, AData]));
   end;
 end;
 
 end.
-

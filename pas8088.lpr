@@ -20,11 +20,6 @@ const
   FPS = 50;
   Cycles = 1000000 div FPS;
 
-  BiosFile = 'poisk_1991.bin';
-  CartFile = 'BASICC11.BIN';
-  BootstrapFile = '';//  'test.bin';// '/home/oleg/soft/poisk/tape/km.cas';
-  DumpFile = '';
-
   DBG = False;
 
   FontFile = 'LiberationMono-Regular.ttf';
@@ -34,7 +29,12 @@ const
   VideoAddress = $B8000;
 
 var
-  Breakpoints: array of TPhysicalAddress = ($00000, $600);
+  BiosFile: String = 'poisk_1991.bin';
+  CartFile: String = 'BASICC11.BIN';
+  BootstrapFile: String = '';
+  DumpFile: String = '';
+
+  Breakpoints: array of TPhysicalAddress = ($00000);
 
 type
   { TApp }
@@ -189,8 +189,10 @@ var
 begin
   FDebug := DBG;
 
+  if ParamCount >= 1 then BootstrapFile := ParamStr(1);
+
   SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-  InitWindow(1280, 720, 'Poisk');
+  InitWindow(800, 600, 'Poisk');
   SetTargetFPS(FPS);
   SetExitKey(KEY_NULL);
 
@@ -206,16 +208,6 @@ begin
   Computer.Cpu.OnBeforeInstruction := @OnBeforeInstruction;
   Computer.Cpu.OnAfterInstruction := @OnAfterInstruction;
   Computer.Cpu.OnBeforeExecution := @OnBeforeExecution;
-
-  {
-  FDebugger.LoadFromFile(BiosFile, BiosAddress);
-
-  if not CartFile.IsEmpty then
-    FDebugger.LoadFromFile(CartFile, $C0000);
-
-  if not BootstrapFile.IsEmpty then
-    FDebugger.LoadFromFile(BootstrapFile, $00600);
-  }
 
   ScanlineShader := LoadShader(Nil, TextFormat('scanlines.fs'));
 
@@ -296,7 +288,7 @@ begin
 
     BeginTextureMode(Target);
       RenderDisplay(Computer.Video);
-      DrawFPS(0, 380);
+      //DrawFPS(0, 380);
     EndTextureMode;
 
     BeginDrawing;
@@ -305,10 +297,11 @@ begin
         DrawTexturePro(
           Target.texture,
           RectangleCreate(0, 0, Target.texture.width, -Target.texture.height),
-          RectangleCreate(64, 64, GetScreenHeight * 1.333 * 0.85, GetScreenHeight * 0.85),
+          RectangleCreate(0, 0, GetScreenHeight * 1.333, GetScreenHeight),
+          { RectangleCreate(64, 64, GetScreenHeight * 1.333 * 0.85, GetScreenHeight * 0.85), }
           Vector2Zero, 0, WHITE);
       EndShaderMode;
-      RenderDebugger(Computer.Cpu);
+      { RenderDebugger(Computer.Cpu); }
     EndDrawing;
   end;
 
