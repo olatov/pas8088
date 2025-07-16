@@ -38,6 +38,9 @@
               <StackChecks Value="True"/>
             </Checks>
             <VerifyObjMethodCallValidity Value="True"/>
+            <Optimizations>
+              <OptimizationLevel Value="0"/>
+            </Optimizations>
           </CodeGeneration>
           <Linking>
             <Debugging>
@@ -133,6 +136,14 @@
         <UnitName Value="Keyboard"/>
       </Unit>
     </Units>
+    <Debugger>
+      <ClassConfig Version="1">
+        <Config ConfigName="New" ConfigClass="TFpDebugDebugger" Active="True" UID="{3358E130-9516-4007-A204-35CC086810AB}"/>
+      </ClassConfig>
+      <DisplayFormatConfigs>
+        <dtfGlobal NumInherit="False" Num="vdfBaseHex" SepHex="vdfhsByte" StructAddrInherit="False" StructAddr="vdfAddressTyped" PointerAddrInherit="False" PointerAddr="vdfAddressTyped"/>
+      </DisplayFormatConfigs>
+    </Debugger>
   </ProjectOptions>
   <CompilerOptions>
     <Version Value="11"/>
