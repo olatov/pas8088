@@ -17,8 +17,9 @@ uses
   Keyboard, Dump;
 
 const
+  ClockSpeed = 1000 * 500;
   FPS = 50;
-  Cycles = 1000000 div FPS;
+  CyclesPerFrame = ClockSpeed div FPS;
 
   DBG = False;
 
@@ -29,8 +30,8 @@ const
   VideoAddress = $B8000;
 
 var
-  BiosFile: String = 'poisk_1991.bin';
-  CartFile: String = 'BASICC11.BIN';
+  BiosFile: String = 'poisk_1991.rom';
+  CartFile: String = 'basicc11.cart';
   BootstrapFile: String = '';
   DumpFile: String = '';
 
@@ -60,8 +61,7 @@ type
     FStepByStep: Boolean;
     FKeybEnabled: Boolean;
     FKeyboardMap: TKeyboardMap;
-    Speed: Integer;
-    Keyboard: TKeyboard;
+    FKeyboard: TKeyboard;
     constructor Create;
     destructor Destroy; override;
     procedure Run;
@@ -106,16 +106,14 @@ begin
   Result.InstallMemory(VideoRam);
 
   { Video }
-  Result.InstallVideo(TVideoController.Create(Result));
+  Result.InstallVideo(TVideoController.Create(Result, CyclesPerFrame));
   NmiTrigger := TNmiTrigger.Create(Result);
   Result.Video.NmiTrigger := NmiTrigger;
   Result.Video.NmiTrigger.AttachCpu(Result.Cpu);
 
-  { Keyboard }
-  Keyboard := TKeyboard.Create(Result);
-  Result.IOBus.AttachDevice(Keyboard);
-
-  //TmpStream := TFileStream.Create('BASICC11.BIN', fmOpenRead)
+  { FKeyboard }
+  FKeyboard := TKeyboard.Create(Result);
+  Result.IOBus.AttachDevice(FKeyboard);
 
   if not CartFile.IsEmpty then
   begin
@@ -202,7 +200,6 @@ begin
   SetTextureFilter(Target.texture, TEXTURE_FILTER_BILINEAR);
 
   Computer := BuildMachine;
-  Speed := Cycles;
 
   Computer.Cpu.InterruptHook := @InterruptHook;
   Computer.Cpu.OnBeforeInstruction := @OnBeforeInstruction;
@@ -218,26 +215,23 @@ begin
 
   while not WindowShouldClose do
   begin
-    if IsKeyPressed(KEY_F11) then
-      DumpMemory('mem.dump', Computer.MemoryBus, $00800, 65536);
-
-    { $01CD }
-
     if IsKeyPressed(KEY_F12) then FStepByStep := True;
 
     Inc(FFrames);
 
-    UpdateKeyboard(Keyboard);
+    UpdateKeyboard(FKeyboard);
 
     if FStepByStep and (PrevTicks <> Computer.Cpu.Ticks) then
       LoadBytesToDebugger(Computer.MemoryBus, Computer.Cpu.CurrentAddress);
 
     PrevTicks := Computer.Cpu.Ticks;
 
+    Computer.Video.BeginFrame;
+
     try
-      if (not FStepByStep) {or (Computer.Cpu.Registers.CS >= $F000)} then
+      if (not FStepByStep) or (Computer.Cpu.Registers.CS >= $F000) then
       begin
-        for I := 1 to Cycles do
+        for I := 1 to CyclesPerFrame do
         begin
           Computer.Run(1);
           if FStepByStep then Break;
@@ -245,7 +239,7 @@ begin
 
         if (FFrames > 20) then
         begin
-          if (Computer.Cpu.Ticks mod 20000) = 0 then
+          if (Computer.Cpu.Ticks mod 10000) = 0 then
             if not Odd(FFrames) then
               Computer.Cpu.RaiseHardwareInterrupt($08)  { Todo: TIMER0 }
             else
@@ -301,6 +295,8 @@ begin
           { RectangleCreate(64, 64, GetScreenHeight * 1.333 * 0.85, GetScreenHeight * 0.85), }
           Vector2Zero, 0, WHITE);
       EndShaderMode;
+      DrawRectangleLinesEx(
+        RectangleCreate(0, 0, GetScreenHeight * 1.333, GetScreenHeight), 1, DARKGRAY);
       { RenderDebugger(Computer.Cpu); }
     EndDrawing;
   end;
@@ -459,57 +455,57 @@ begin
 
   DrawTextEx(
     FFont,
-    PChar(Format('A(%d)', [IfThen(ACpu.Registers.Flags.AF, 1, 0)])),
-    Vector2Create(Left + 240, 0 * (FontSize + VertSpacing) + 0), FontSize, 1,
-    specialize IfThen<TColorB>(ACpu.Registers.Flags.AF, YELLOW, GRAY));
-
-  DrawTextEx(
-    FFont,
     PChar(Format('C(%d)', [IfThen(ACpu.Registers.Flags.CF, 1, 0)])),
-    Vector2Create(Left + 240, 1 * (FontSize + VertSpacing) + 0), FontSize, 1,
+    Vector2Create(Left + 240, 0 * (FontSize + VertSpacing) + 0), FontSize, 1,
     specialize IfThen<TColorB>(ACpu.Registers.Flags.CF, YELLOW, GRAY));
 
   DrawTextEx(
     FFont,
-    PChar(Format('D(%d)', [IfThen(ACpu.Registers.Flags.DF, 1, 0)])),
-    Vector2Create(Left + 240, 2 * (FontSize + VertSpacing) + 0), FontSize, 1,
-    specialize IfThen<TColorB>(ACpu.Registers.Flags.DF, YELLOW, GRAY));
+    PChar(Format('Z(%d)', [IfThen(ACpu.Registers.Flags.ZF, 1, 0)])),
+    Vector2Create(Left + 240, 1 * (FontSize + VertSpacing) + 0), FontSize, 1,
+    specialize IfThen<TColorB>(ACpu.Registers.Flags.ZF, YELLOW, GRAY));
 
   DrawTextEx(
     FFont,
-    PChar(Format('I(%d)', [IfThen(ACpu.Registers.Flags.IF_, 1, 0)])),
-    Vector2Create(Left + 240, 3 * (FontSize + VertSpacing) + 0), FontSize, 1,
-    specialize IfThen<TColorB>(ACpu.Registers.Flags.IF_, YELLOW, GRAY));
+    PChar(Format('S(%d)', [IfThen(ACpu.Registers.Flags.SF, 1, 0)])),
+    Vector2Create(Left + 240, 2 * (FontSize + VertSpacing) + 0), FontSize, 1,
+    specialize IfThen<TColorB>(ACpu.Registers.Flags.SF, YELLOW, GRAY));
 
   DrawTextEx(
     FFont,
     PChar(Format('O(%d)', [IfThen(ACpu.Registers.Flags.OF_, 1, 0)])),
-    Vector2Create(Left + 240, 4 * (FontSize + VertSpacing) + 0), FontSize, 1,
+    Vector2Create(Left + 240, 3 * (FontSize + VertSpacing) + 0), FontSize, 1,
     specialize IfThen<TColorB>(ACpu.Registers.Flags.OF_, YELLOW, GRAY));
 
   DrawTextEx(
     FFont,
     PChar(Format('P(%d)', [IfThen(ACpu.Registers.Flags.PF, 1, 0)])),
-    Vector2Create(Left + 240, 5 * (FontSize + VertSpacing) + 0), FontSize, 1,
+    Vector2Create(Left + 240, 4 * (FontSize + VertSpacing) + 0), FontSize, 1,
     specialize IfThen<TColorB>(ACpu.Registers.Flags.PF, YELLOW, GRAY));
 
   DrawTextEx(
     FFont,
-    PChar(Format('T(%d)', [IfThen(ACpu.Registers.Flags.TF, 1, 0)])),
+    PChar(Format('A(%d)', [IfThen(ACpu.Registers.Flags.AF, 1, 0)])),
+    Vector2Create(Left + 240, 5 * (FontSize + VertSpacing) + 0), FontSize, 1,
+    specialize IfThen<TColorB>(ACpu.Registers.Flags.AF, YELLOW, GRAY));
+
+  DrawTextEx(
+    FFont,
+    PChar(Format('D(%d)', [IfThen(ACpu.Registers.Flags.DF, 1, 0)])),
     Vector2Create(Left + 240, 6 * (FontSize + VertSpacing) + 0), FontSize, 1,
-    specialize IfThen<TColorB>(ACpu.Registers.Flags.TF, YELLOW, GRAY));
+    specialize IfThen<TColorB>(ACpu.Registers.Flags.DF, YELLOW, GRAY));
 
   DrawTextEx(
     FFont,
-    PChar(Format('S(%d)', [IfThen(ACpu.Registers.Flags.SF, 1, 0)])),
+    PChar(Format('I(%d)', [IfThen(ACpu.Registers.Flags.IF_, 1, 0)])),
     Vector2Create(Left + 240, 7 * (FontSize + VertSpacing) + 0), FontSize, 1,
-    specialize IfThen<TColorB>(ACpu.Registers.Flags.SF, YELLOW, GRAY));
+    specialize IfThen<TColorB>(ACpu.Registers.Flags.IF_, YELLOW, GRAY));
 
   DrawTextEx(
     FFont,
-    PChar(Format('Z(%d)', [IfThen(ACpu.Registers.Flags.ZF, 1, 0)])),
+    PChar(Format('T(%d)', [IfThen(ACpu.Registers.Flags.TF, 1, 0)])),
     Vector2Create(Left + 240, 8 * (FontSize + VertSpacing) + 0), FontSize, 1,
-    specialize IfThen<TColorB>(ACpu.Registers.Flags.ZF, YELLOW, GRAY));
+    specialize IfThen<TColorB>(ACpu.Registers.Flags.TF, YELLOW, GRAY));
 
   if FStepByStep then
   begin

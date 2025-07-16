@@ -68,7 +68,6 @@ type
       TVideoMode = (vmText40, vmText80, vmGraphics320, vmGraphics640);
     const
       BaseSegment = $B800;
-      TicksPerFrame = 20000;
     procedure ActivateTrap(const AOffset: Word; const AData: Byte = 0);
   private
     FLatch: array[$28..$2A] of Byte;
@@ -105,7 +104,8 @@ type
     FIOBus: IIOBus;
     FMemoryBus: IMemoryBus;
     FNmiTrigger: INmiTrigger;
-    FTicks: QWord;
+    FFrameTicks, FLineTicks, FTicksPerFrame: QWord;
+    FLineDuration, FVertRetraceDuration, FHorizRetraceDuration: QWord;
     function GetBackgroundColor: TColor;
     function GetHorizRatrace: Boolean;
     function GetScanlines(ANumber: TVideoRows): TScanline;
@@ -119,7 +119,9 @@ type
     property ScanLines[ANumber: TVideoRows]: TScanLine read GetScanLines;
     property BackgroundColor: TColor read GetBackgroundColor;
 
+    constructor Create(AOwner: TComponent; AFrameDuration: QWord);
     procedure Tick;
+    procedure BeginFrame;  { for synchronization }
     property VertRetrace: Boolean read GetVertRetrace;
     property HorizRetrace: Boolean read GetHorizRatrace;
 
@@ -271,13 +273,27 @@ end;
 
 function TVideoController.GetVertRetrace: Boolean;
 begin
-  Result := FTicks < (TicksPerFrame div 25);
+  Result := FFrameTicks < FVertRetraceDuration;
+end;
+
+constructor TVideoController.Create(AOwner: TComponent; AFrameDuration: QWord);
+begin
+  inherited Create(AOwner);
+  FVertRetraceDuration := AFrameDuration div 25;
+  FLineDuration := AFrameDuration div 625;
+  FHorizRetraceDuration := FLineDuration div 6;
 end;
 
 procedure TVideoController.Tick;
 begin
-  Inc(FTicks);
-  if FTicks > TicksPerFrame then FTicks := 0;
+  Inc(FFrameTicks);
+  Inc(FLineTicks);
+  if FLineTicks >= FLineTicks then FLineTicks := 0;
+end;
+
+procedure TVideoController.BeginFrame;
+begin
+  FFrameTicks := 0;
 end;
 
 function TVideoController.GetBackgroundColor: TColor;
@@ -292,7 +308,7 @@ end;
 
 function TVideoController.GetHorizRatrace: Boolean;
 begin
-  Result := VertRetrace; { horribly incorrect but will do for now }
+  Result := FLineTicks < FHorizRetraceDuration;
 end;
 
 function TVideoController.GetMemoryBus: IMemoryBus;
@@ -358,8 +374,8 @@ begin
 
 end;
 
-function TVideoController.OnIORead(ADevice: IIOBusDevice; AAddress: Word; out
-  AData: Byte): Boolean;
+function TVideoController.OnIORead(
+  ADevice: IIOBusDevice; AAddress: Word; out AData: Byte): Boolean;
 begin
   case AAddress of
     $28..$2A:
@@ -380,7 +396,12 @@ begin
         Result := True;
       end;
 
-    $3D4, $3D5, $3D8, $3D9: ActivateTrap(Lo(AAddress) or $4000);
+    $3D4..$3D5, $3D8..$3D9:
+      begin
+        ActivateTrap(Lo(AAddress) or $4000);
+        AData := $FF;
+        Result := True;
+      end;
 
     $3DA:
       begin
@@ -389,7 +410,6 @@ begin
         if (VertRetrace or HorizRetrace) then AData := AData or $1;
         if HorizRetrace then AData := AData or $8;
         Result := True;
-        //Writeln('Read 3DA: ', AData);
       end;
 
   else
@@ -401,21 +421,13 @@ procedure TVideoController.OnIOWrite(
   Sender: IIOBusDevice; AAddress: Word; AData: Byte);
 begin
   case AAddress of
-    $68:
-      begin
-        Move(AData, FPort68Register, 1);
-        {
-        Writeln(Format('Port %.x write: %.2x :: %d',
-          [AAddress, AData,
-            FPort68Register.BackgroundColor]));
-          }
-      end;
+    $68: Move(AData, FPort68Register, 1);
 
     $6A: Move(AData, FPort6ARegister, 1);
 
-    $3D4, $3D5, $3D8, $3D9:  ActivateTrap(Lo(AAddress) or $C000, AData);
+    $3D4..$3D5, $3D8..$3D9:  ActivateTrap(Lo(AAddress) or $C000, AData);
 
-    $3DA: Writeln(Format('CGA write %.x: %.2x', [AAddress, AData]));
+    $3DA..$3DC: Writeln(Format('CGA write %.x: %.2x', [AAddress, AData]));
   end;
 end;
 
