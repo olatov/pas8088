@@ -2580,7 +2580,12 @@ end;
 
 procedure TCpu8088.HandleAaa;
 begin
-  raise Exception.Create('Not implemented: AAA');
+  Registers.Flags.AF := Registers.Flags.AF or ((Registers.AL and $0F) > 9);
+  if Registers.Flags.AF then
+    Registers.AX := Registers.AX + $106;
+
+  Registers.AL := Registers.AL and $0F;
+  Registers.Flags.CF := Registers.Flags.AF;
 end;
 
 procedure TCpu8088.HandleCmpRM8Reg8;
