@@ -2446,8 +2446,24 @@ begin
 end;
 
 procedure TCpu8088.HandleDas;
+var
+  OldAL: Byte;
+  OldCF: Boolean;
 begin
-  raise Exception.Create('Not implemented: DAS');
+  OldAL := Registers.AL;
+  OldCF := Registers.Flags.CF;
+
+  Registers.Flags.AF := (((Registers.AL and $0F) > 9) or Registers.Flags.AF);
+  if Registers.Flags.AF then
+    Registers.AL := Registers.AL - 6;
+
+  Registers.Flags.CF := (OldAL > $99) or OldCF;
+  if Registers.Flags.CF then
+    Registers.AL := Registers.AL - $60;
+
+  Registers.Flags.UpdateSF8(Registers.AL);
+  Registers.Flags.UpdateSF8(Registers.AL);
+  Registers.Flags.UpdateSF8(Registers.AL);
 end;
 
 procedure TCpu8088.HandleSubRM8Reg8;
