@@ -119,7 +119,7 @@ type
     property ScanLines[ANumber: TVideoRows]: TScanLine read GetScanLines;
     property BackgroundColor: TColor read GetBackgroundColor;
 
-    constructor Create(AOwner: TComponent; AFrameDuration: QWord);
+    constructor Create(AOwner: TComponent; AFrameDuration: QWord); reintroduce;
     procedure Tick;
     procedure BeginFrame;  { for synchronization }
     property VertRetrace: Boolean read GetVertRetrace;
@@ -279,21 +279,22 @@ end;
 constructor TVideoController.Create(AOwner: TComponent; AFrameDuration: QWord);
 begin
   inherited Create(AOwner);
-  FVertRetraceDuration := AFrameDuration div 25;
-  FLineDuration := AFrameDuration div 625;
-  FHorizRetraceDuration := FLineDuration div 6;
+  FLineDuration := AFrameDuration div 352;
+  FVertRetraceDuration := FLineDuration * 16;
+  FHorizRetraceDuration := (FLineDuration div 5);
 end;
 
 procedure TVideoController.Tick;
 begin
   Inc(FFrameTicks);
   Inc(FLineTicks);
-  if FLineTicks >= FLineTicks then FLineTicks := 0;
+  if FLineTicks >= FLineDuration then FLineTicks := 0;
 end;
 
 procedure TVideoController.BeginFrame;
 begin
   FFrameTicks := 0;
+  FLineTicks := 0;
 end;
 
 function TVideoController.GetBackgroundColor: TColor;
@@ -408,7 +409,7 @@ begin
         { Todo }
         AData := 0;
         if (VertRetrace or HorizRetrace) then AData := AData or $1;
-        if HorizRetrace then AData := AData or $8;
+        if VertRetrace then AData := AData or $8;
         Result := True;
       end;
 
