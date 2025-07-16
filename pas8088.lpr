@@ -239,7 +239,7 @@ begin
 
         if (FFrames > 20) then
         begin
-          if (Computer.Cpu.Ticks mod 10000) = 0 then
+          if (Computer.Cpu.Ticks mod 5000) = 0 then
             if not Odd(FFrames) then
               Computer.Cpu.RaiseHardwareInterrupt($08)  { Todo: TIMER0 }
             else
@@ -297,7 +297,9 @@ begin
       EndShaderMode;
       DrawRectangleLinesEx(
         RectangleCreate(0, 0, GetScreenHeight * 1.333, GetScreenHeight), 1, DARKGRAY);
-      { RenderDebugger(Computer.Cpu); }
+
+      if FStepByStep then
+        RenderDebugger(Computer.Cpu);
     EndDrawing;
   end;
 
