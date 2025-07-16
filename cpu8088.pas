@@ -3465,8 +3465,16 @@ begin
 end;
 
 procedure TCpu8088.HandleAam;
+var
+  Result: Word = 0;
+  Remainder: Word = 0;
 begin
-  raise Exception.Create('Not implemented: AAM');
+  DivMod(Registers.AL, 10, Result, Remainder);
+  Registers.AH := Result;
+  Registers.AL := Remainder;
+  Registers.Flags.UpdateSF8(Remainder);
+  Registers.Flags.UpdatePF8(Remainder);
+  Registers.Flags.UpdateZF8(Remainder);
 end;
 
 procedure TCpu8088.HandleAad;
