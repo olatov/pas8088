@@ -706,8 +706,13 @@ function TFlagRegister.GetWord: Word;
 var
   I: Integer;
 begin
-  Result := 0;
-  for I := 0 to 15 do
+  {
+    Possibly on the 8086/88 (and 80186/88) CPUs,
+    the flags register's bits 12-15 will always be set to 1
+  }
+
+  Result := $F000;
+  for I := 0 to 11 do
     if FBits[I] then
       Result := Result or (1 shl I);
 end;
@@ -914,7 +919,7 @@ end;
 
 procedure TFlagRegister.UpdateAfterNeg8(AResult: Byte);
 begin
-  CF := AResult = 0;
+  CF := AResult <> 0;
   OF_ := not InRange(AResult, Int8.MinValue, Int8.MaxValue);
   AF := (AResult and $10) <> 0;  { TODO }
   UpdateZF8(AResult);
@@ -924,7 +929,7 @@ end;
 
 procedure TFlagRegister.UpdateAfterNeg16(AResult: Word);
 begin
-  CF := AResult = 0;
+  CF := AResult <> 0;
   OF_ := not InRange(AResult, Int16.MinValue, Int16.MaxValue);
   AF := (AResult and $1000) <> 0;  { TODO }
   UpdateZF16(AResult);
@@ -1045,7 +1050,7 @@ begin
   UpdateZF16(AResult);
   UpdateSF16(AResult);
   UpdatePF16(AResult);
-  CF := ((AOld and (1 shl ACount - 1)) <> 0);
+  CF := ((AOld shr (ACount - 1)) and 1) <> 0;
   if ACount = 1 then OF_ := (AResult and $8000) <> 0;
 
   AF := False; { for debug }
@@ -3273,7 +3278,7 @@ begin
   ModRM := FetchModRM;
   case ModRM.Reg of
     0: TestRM8Imm8(ModRM, FetchCodeByte);
-    1: raise Exception.CreateFmt('Invalid GRP4 extension: %d', [ModRM.Reg]);
+    1: raise Exception.CreateFmt('Invalid GRP3 extension: %d', [ModRM.Reg]);
     2: NotRM8(ModRM);
     3: NegRM8(ModRM);
     4: MulALRM8(ModRM);
@@ -3290,7 +3295,7 @@ begin
   ModRM := FetchModRM;
   case ModRM.Reg of
     0: TestRM16Imm16(ModRM, FetchCodeWord);
-    1: Exception.CreateFmt('Invalid GRP4 extension: %d', [ModRM.Reg]);
+    1: Exception.CreateFmt('Invalid GRP3 extension: %d', [ModRM.Reg]);
     2: NotRM16(ModRM);
     3: NegRM16(ModRM);
     4: MulAXRM16(ModRM);
@@ -3307,11 +3312,11 @@ end;
 
 procedure TCpu8088.HandleRetiNear;
 var
-  Param: Word;
+  Displacement: Word;
 begin
-  Param := FetchCodeWord;
+  Displacement := FetchCodeWord;
   Registers.IP := Pop;
-  Registers.SP := Registers.SP + Param;
+  Registers.SP := Registers.SP + Displacement;
 end;
 
 procedure TCpu8088.HandleRetNear;
@@ -3357,12 +3362,12 @@ end;
 
 procedure TCpu8088.HandleRetiFar;
 var
-  Param: Word;
+  Displacement: Word;
 begin
-  Param := FetchCodeWord;
+  Displacement := FetchCodeWord;
   Registers.IP := Pop;
   Registers.CS := Pop;
-  Registers.SP := Registers.SP + Param;
+  Registers.SP := Registers.SP + Displacement;
 end;
 
 procedure TCpu8088.HandleRetFar;
@@ -3468,8 +3473,16 @@ procedure TCpu8088.HandleAam;
 var
   Result: Word = 0;
   Remainder: Word = 0;
+  Base: Byte;
 begin
-  DivMod(Registers.AL, 10, Result, Remainder);
+  Base := FetchCodeByte;
+  if Base = 0 then
+  begin
+    RaiseHardwareInterrupt(0);
+    Exit;
+  end;
+
+  DivMod(Registers.AL, Base, Result, Remainder);
   Registers.AH := Result;
   Registers.AL := Remainder;
   Registers.Flags.UpdateSF8(Remainder);
@@ -3687,7 +3700,7 @@ var
 begin
   Old := ReadRM16(AModRM);
   Result := Old + AImm;
-  WriteRM16(AModRM, Word(Result));
+  WriteRM16(AModRM, Result);
   Registers.Flags.UpdateAfterAdd16(Old, AImm, Result);
 end;
 
@@ -3699,9 +3712,10 @@ begin
   Old := ReadRM8(AModRM);
   CarryIn := IfThen(Registers.Flags.CF, 1, 0);
   Result := Old;
-  Result := Result + AImm;
+  Result := Result;
+  Inc(Result, AImm);
   Inc(Result, CarryIn);
-  WriteRM8(AModRM, Byte(Result));
+  WriteRM8(AModRM, Result);
   Registers.Flags.UpdateAfterAdd8(Old, AImm + CarryIn, Result);
 end;
 
@@ -3713,9 +3727,9 @@ begin
   Old := ReadRM16(AModRM);
   CarryIn := IfThen(Registers.Flags.CF, 1, 0);
   Result := Old;
-  Result := Result + AImm;
+  Inc(Result, AImm);
   Inc(Result, CarryIn);
-  WriteRM16(AModRM, Byte(Result));
+  WriteRM16(AModRM, Result);
   Registers.Flags.UpdateAfterAdd16(Old, AImm + CarryIn, Result);
 end;
 
@@ -3819,7 +3833,7 @@ end;
 
 procedure TCpu8088.SbbRM16Imm16(AModRM: TModRM; AImm: Word);
 var
-  Old, CarryIn: Byte;
+  Old, CarryIn: Word;
   Result: Int32;
 begin
   Old := ReadRM16(AModRM);
@@ -3827,7 +3841,7 @@ begin
   Result := Old;
   Dec(Result, AImm);
   Dec(Result, CarryIn);
-  WriteRM16(AModRM, Word(Result));
+  WriteRM16(AModRM, Result);
   Registers.Flags.UpdateAfterSub16(Old, AImm, CarryIn, Result);
 end;
 
@@ -3839,7 +3853,7 @@ begin
   Old := ReadRM8(AModRM);
   Result := Old;
   Dec(Result, AImm);
-  WriteRM8(AModRM, Byte(Result));
+  WriteRM8(AModRM, Result);
   Registers.Flags.UpdateAfterSub8(Old, AImm, 0, Result);
 end;
 
@@ -3937,7 +3951,7 @@ end;
 
 procedure TCpu8088.CallNearRelative(ADisplacement: Int16);
 begin
-  CallNearAbsolute(Registers.IP + ADisplacement);
+  CallNearAbsolute(Registers.IP + ADisplacement));
 end;
 
 procedure TCpu8088.CallNearAbsolute(AOffset: Word);
@@ -4002,11 +4016,11 @@ end;
 
 procedure TCpu8088.NegRM16(AModRM: TModRM);
 var
-  Data: Word;
+  Old: Word;
   Result: Int16;
 begin
-  Data := ReadRM16(AModRM);
-  Result := Int16(-Data);
+  Old := ReadRM16(AModRM);
+  Result := Int16(-Old);
   WriteRM16(AModRM, Result);
   Registers.Flags.UpdateAfterNeg16(Result);
 end;
@@ -4215,39 +4229,51 @@ begin
   for I := 1 to Registers.CL do
     Result := (Result shl 1) or (Result shr 15);
 
-  WriteRM8(AModRM, Result);
+  WriteRM16(AModRM, Result);
   Registers.Flags.UpdateAfterRol16(Old, Registers.CL, Result);
 end;
 
 procedure TCpu8088.RclRM8Const1(AModRM: TModRM);
 var
-  OldCF, Result: Byte;
+  Old, OldCF, Result: Byte;
+const
+  CFMask: array[False..True] of Byte = (0, $80);
 begin
-  Result := ReadRM8(AModRM);
+  Old := ReadRM8(AModRM);
   OldCF := IfThen(Registers.Flags.CF, 1, 0);
-  Registers.Flags.CF := (Result and $80) <> 0;
-  Result := (Result shl 1) or OldCF;
+  Result := (Old shl 1) or OldCF;
   WriteRM8(AModRM, Result);
+
+  Registers.Flags.CF := (Result and $80) <> 0;
+  Registers.Flags.OF_ := ((Result xor CFMask[Registers.Flags.CF]) and $80) <> 0;
 end;
 
 procedure TCpu8088.RclRM16Const1(AModRM: TModRM);
 var
   OldCF: Byte;
-  Result: Word;
+  Old, Result: Word;
+const
+  CFMask: array[False..True] of Word = (0, $8000);
 begin
-  Result := ReadRM16(AModRM);
+  Old := ReadRM16(AModRM);
   OldCF := IfThen(Registers.Flags.CF, 1, 0);
-  Registers.Flags.CF := (Result and $8000) <> 0;
-  Result := (Result shl 1) or OldCF;
+  Result := (Old shl 1) or OldCF;
   WriteRM16(AModRM, Result);
+
+  Registers.Flags.CF := (Old and $8000) <> 0;
+  Registers.Flags.OF_ :=
+    ((Result xor CFMask[Registers.Flags.CF]) and $8000) <> 0;
 end;
 
 procedure TCpu8088.RclRM8CL(AModRM: TModRM);
 var
-  OldCF, Result: Byte;
+  Old, OldCF, Result: Byte;
   I: Integer;
+const
+  CFMask: array[False..True] of Byte = (0, $80);
 begin
-  Result := ReadRM8(AModRM);
+  Old := ReadRM8(AModRM);
+  Result := Old;
   for I := 1 to Registers.CL do
   begin
     OldCF := IfThen(Registers.Flags.CF, 1, 0);
@@ -4255,51 +4281,73 @@ begin
     Result := (Result shl 1) or OldCF;
   end;
   WriteRM8(AModRM, Result);
+
+  if Registers.CL = 1 then
+    Registers.Flags.OF_ :=
+      ((Result xor CFMask[Registers.Flags.CF]) and $80) <> 0;
 end;
 
 procedure TCpu8088.RclRM16CL(AModRM: TModRM);
 var
-  OldCF, Data: Word;
+  Old, OldCF, Result: Word;
   I: Integer;
+const
+  CFMask: array[False..True] of Word = (0, $8000);
 begin
-  Data := ReadRM16(AModRM);
+  Old := ReadRM16(AModRM);
+  Result := Old;
   for I := 1 to Registers.CL do
   begin
     OldCF := IfThen(Registers.Flags.CF, 1, 0);
-    Registers.Flags.CF := (Data and $8000) <> 0;
-    Data := (Data shl 1) or OldCF;
+    Registers.Flags.CF := (Result and $8000) <> 0;
+    Result := (Result shl 1) or OldCF;
   end;
-  WriteRM16(AModRM, Data);
+  WriteRM16(AModRM, Result);
+
+  if Registers.CL = 1 then
+    Registers.Flags.OF_ :=
+      ((Result xor CFMask[Registers.Flags.CF]) and $8000) <> 0;
 end;
 
 procedure TCpu8088.RcrRM8Const1(AModRM: TModRM);
 var
-  OldCF, Result: Byte;
+  Old, OldCF, Result: Byte;
+const
+  CFMask: array[False..True] of Byte = (0, $80);
 begin
-  Result := ReadRM8(AModRM);
+  Old := ReadRM8(AModRM);
   OldCF := IfThen(Registers.Flags.CF, 1, 0);
-  Registers.Flags.CF := (Result and 1) <> 0;
-  Result := (Result shr 1) or (OldCF shl 7);
+  Result := (Old shr 1) or (OldCF shl 7);
   WriteRM8(AModRM, Result);
+
+  Registers.Flags.CF := (Old and 1) <> 0;
+  Registers.Flags.OF_ := ((Old xor CFMask[Registers.Flags.CF]) and $8000) = 0;
 end;
 
 procedure TCpu8088.RcrRM16Const1(AModRM: TModRM);
 var
-  OldCF, Result: Word;
+  Old, OldCF, Result: Word;
+const
+  CFMask: array[False..True] of Word = (0, $8000);
 begin
-  Result := ReadRM16(AModRM);
+  Old := ReadRM16(AModRM);
   OldCF := IfThen(Registers.Flags.CF, 1, 0);
-  Registers.Flags.CF := (Result and 1) <> 0;
-  Result := (Result shr 1) or (OldCF shl 15);
+  Result := (Old shr 1) or (OldCF shl 15);
   WriteRM16(AModRM, Result);
+
+  Registers.Flags.CF := (Result and 1) <> 0;
+  Registers.Flags.OF_ := ((Old xor CFMask[Registers.Flags.CF]) and $8000) = 0;
 end;
 
 procedure TCpu8088.RcrRM8CL(AModRM: TModRM);
 var
-  OldCF, Result: Byte;
+  Old, OldCF, Result: Byte;
   I: Integer;
+const
+  CFMask: array[False..True] of Byte = (0, $80);
 begin
-  Result := ReadRM8(AModRM);
+  Old := ReadRM8(AModRM);
+  Result := Old;
   for I := 1 to Registers.CL do
   begin
     OldCF := IfThen(Registers.Flags.CF, 1, 0);
@@ -4307,14 +4355,20 @@ begin
     Result := (Result shr 1) or (OldCF shl 7);
   end;
   WriteRM8(AModRM, Result);
+
+  if Registers.CL = 1 then
+    Registers.Flags.OF_ := ((Old xor CFMask[Registers.Flags.CF]) and $8000) = 0;
 end;
 
 procedure TCpu8088.RcrRM16CL(AModRM: TModRM);
 var
-  OldCF, Result: Word;
+  Old, OldCF, Result: Word;
   I: Integer;
+const
+  CFMask: array[False..True] of Word = (0, $8000);
 begin
-  Result := ReadRM16(AModRM);
+  Old := ReadRM16(AModRM);
+  Result := Old;
   for I := 1 to Registers.CL do
   begin
     OldCF := IfThen(Registers.Flags.CF, 1, 0);
@@ -4322,6 +4376,9 @@ begin
     Result := (Result shr 1) or (OldCF shl 15);
   end;
   WriteRM16(AModRM, Result);
+
+  if Registers.CL = 1 then
+    Registers.Flags.OF_ := ((Old xor CFMask[Registers.Flags.CF]) and $8000) = 0;
 end;
 
 procedure TCpu8088.SarRM8CL(AModRM: TModRM);
@@ -4382,7 +4439,7 @@ end;
 
 procedure TCpu8088.MulAXRM16(AModRM: TModRM);
 var
-  Result: QWord;
+  Result: DWord;
 begin
   Result := Registers.AX * ReadRM16(AModRM);
   Registers.DX := Hi(Result);
