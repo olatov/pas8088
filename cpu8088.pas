@@ -998,7 +998,7 @@ end;
 procedure TFlagRegister.UpdateAfterShl8(
   AOld: Byte; ACount: Byte; AResult: Byte);
 var
-  OFMask: array[False..True] of Byte = (0, $80);
+  CFMask: array[False..True] of Byte = (0, $80);
 begin
   UpdateZF8(AResult);
   UpdateSF8(AResult);
@@ -1008,7 +1008,7 @@ begin
   else
     CF := False;
 
-  if ACount = 1 then OF_ := ((AResult and $80) xor OFMask[CF]) <> 0;
+  if ACount = 1 then OF_ := ((AResult and $80) xor CFMask[CF]) <> 0;
 
   AF := False; { for debug }
 end;
@@ -1016,17 +1016,17 @@ end;
 procedure TFlagRegister.UpdateAfterShl16(
   AOld: Word; ACount: Byte; AResult: Word);
 var
-  OFMask: array[False..True] of Word = (0, $8000);
+  CFMask: array[False..True] of Word = (0, $8000);
 begin
   UpdateZF16(AResult);
   UpdateSF16(AResult);
   UpdatePF16(AResult);
-  if ACount < 8 then
+  if ACount < 16 then
     CF := (AOld and (1 shl (16 - ACount)) <> 0)
   else
     CF := False;
 
-  if ACount = 1 then OF_ := ((AResult and $8000) xor OFMask[CF]) <> 0;
+  if ACount = 1 then OF_ := ((AResult and $8000) xor CFMask[CF]) <> 0;
 
   AF := False; { for debug }
 end;
@@ -1063,7 +1063,6 @@ begin
   UpdateSF8(AResult);
   UpdateZF8(AResult);
   UpdatePF8(AResult);
-
   AF := False; { for debug }
 end;
 
@@ -4049,8 +4048,8 @@ procedure TCpu8088.ShlRM8CL(AModRM: TModRM);
 var
   Old, Result: Byte;
 begin
-  Old := ReadRM8(AModRm);
-  if Registers.CL = 0 Then Exit;
+  Old := ReadRM8(AModRM);
+  if Registers.CL = 0 then Exit;
   Result := Old shl Registers.CL;
   WriteRM8(AModRM, Result);
   Registers.Flags.UpdateAfterShl8(Old, Registers.CL, Result);
@@ -4060,8 +4059,8 @@ procedure TCpu8088.ShlRM16CL(AModRM: TModRM);
 var
   Old, Result: Word;
 begin
-  Old := ReadRM16(AModRm);
-  if Registers.CL = 0 Then Exit;
+  Old := ReadRM16(AModRM);
+  if Registers.CL = 0 then Exit;
   Result := Old shl Registers.CL;
   WriteRM16(AModRM, Result);
   Registers.Flags.UpdateAfterShl16(Old, Registers.CL, Result);
@@ -4071,7 +4070,7 @@ procedure TCpu8088.ShrRM8Const1(AModRM: TModRM);
 var
   Old, Result: Byte;
 begin
-  Old := ReadRM8(AModRm);
+  Old := ReadRM8(AModRM);
   Result := Old shr 1;
   WriteRM8(AModRM, Result);
   Registers.Flags.UpdateAfterShr8(Old, 1, Result);
@@ -4081,7 +4080,7 @@ procedure TCpu8088.ShrRM16Const1(AModRM: TModRM);
 var
   Old, Result: Word;
 begin
-  Old := ReadRM16(AModRm);
+  Old := ReadRM16(AModRM);
   Result := Old shr 1;
   WriteRM16(AModRM, Result);
   Registers.Flags.UpdateAfterShr16(Old, 1, Result);
@@ -4091,8 +4090,8 @@ procedure TCpu8088.ShrRM8CL(AModRM: TModRM);
 var
   Old, Result: Byte;
 begin
-  Old := ReadRM8(AModRm);
-  if Registers.CL = 0 Then Exit;
+  Old := ReadRM8(AModRM);
+  if Registers.CL = 0 then Exit;
   Result := Old shr Registers.CL;
   WriteRM8(AModRM, Result);
   Registers.Flags.UpdateAfterShr8(Old, Registers.CL, Result);
@@ -4102,7 +4101,7 @@ procedure TCpu8088.ShrRM16CL(AModRM: TModRM);
 var
   Old, Result: Word;
 begin
-  Old := ReadRM16(AModRm);
+  Old := ReadRM16(AModRM);
   if Registers.CL = 0 Then Exit;
   Result := Old shr Registers.CL;
   WriteRM16(AModRM, Result);
