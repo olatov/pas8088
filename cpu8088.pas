@@ -4244,7 +4244,7 @@ begin
   Result := (Old shl 1) or OldCF;
   WriteRM8(AModRM, Result);
 
-  Registers.Flags.CF := (Result and $80) <> 0;
+  Registers.Flags.CF := (Old and $80) <> 0;
   Registers.Flags.OF_ := ((Result xor CFMask[Registers.Flags.CF]) and $80) <> 0;
 end;
 
