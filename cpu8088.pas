@@ -3478,8 +3478,15 @@ begin
 end;
 
 procedure TCpu8088.HandleAad;
+var
+  Result: Byte;
 begin
-  raise Exception.Create('Not implemented: AAD');
+  Result := ((Registers.AL * 10) + Registers.AX) and $FF;
+  Registers.AL := Result;
+  Registers.AH := 0;
+  Registers.Flags.UpdateSF8(Result);
+  Registers.Flags.UpdatePF8(Result);
+  Registers.Flags.UpdateZF8(Result);
 end;
 
 procedure TCpu8088.HandleXlat;
