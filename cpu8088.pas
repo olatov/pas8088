@@ -3951,7 +3951,7 @@ end;
 
 procedure TCpu8088.CallNearRelative(ADisplacement: Int16);
 begin
-  CallNearAbsolute(Registers.IP + ADisplacement));
+  CallNearAbsolute(Registers.IP + ADisplacement);
 end;
 
 procedure TCpu8088.CallNearAbsolute(AOffset: Word);
