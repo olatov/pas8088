@@ -3459,9 +3459,8 @@ begin
     3: RcrRM16CL(ModRM);
     4: ShlRM16CL(ModRM);
     5: ShrRM16CL(ModRM);
+    6: raise Exception.CreateFmt('Invalid GRP2 extension: %d', [ModRM.Reg]);
     7: SarRM16CL(ModRM);
-  else
-    raise Exception.CreateFmt('Not implemented: GRP2 /%d', [ModRM.Reg]);
   end;
 end;
 
