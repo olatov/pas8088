@@ -32,6 +32,7 @@ const
 var
   BiosFile: String = 'poisk_1991.rom';
   CartFile: String = 'basicc11.cart';
+  TapeFile: String = 'cassette.img';
   BootstrapFile: String = '';
   DumpFile: String = '';
 
@@ -62,12 +63,15 @@ type
     FKeybEnabled: Boolean;
     FKeyboardMap: TKeyboardMap;
     FKeyboard: TKeyboard;
+    FTapeStream: TStream;
     constructor Create;
     destructor Destroy; override;
     procedure Run;
     procedure RenderDisplay(AVideo: TVideoController);
     procedure RenderDebugger(ACpu: TCpu8088);
     procedure BuildKeyboardMap;
+    function HandleBootstrap(const Cpu: TCpu8088): Boolean;
+    procedure HandleLoadFromTape(ACpu: TCpu8088);
     procedure UpdateKeyboard(AKeyboard: TKeyboard);
     function BuildMachine: TMachine;
     function InterruptHook(ASender: TObject; ANumber: Byte): Boolean;
@@ -146,6 +150,9 @@ begin
     TWriteBufStream(FDumpStream).SourceOwner := True;
   end;
 
+  if not TapeFile.IsEmpty then
+    FTapeStream := TFileStream.Create(TapeFile, fmOpenRead);
+
   FKeyboardMap := TKeyboardMap.Create;
   BuildKeyboardMap;
 end;
@@ -155,6 +162,7 @@ begin
   FreeAndNil(FDebugger);
   FreeAndNil(FLogWriter);
   FreeAndNil(FDumpStream);
+  FreeAndNil(FTapeStream);
   FreeAndNil(FKeyboardMap);
   inherited Destroy;
 end;
@@ -233,6 +241,9 @@ begin
       begin
         for I := 1 to CyclesPerFrame do
         begin
+          //if Computer.Cpu.Ticks = Trunc(ClockSpeed * 2) then FKeyboard[KeyF2] := True;
+          //if Computer.Cpu.Ticks = Trunc(ClockSpeed * 2.2) then FKeyboard[KeyF2] := False;
+
           Computer.Run(1);
           if FStepByStep then Break;
         end;
@@ -330,6 +341,32 @@ begin
   end;
   Stream.SaveToFile(AFileName);
   Stream.Free;
+end;
+
+function TApp.HandleBootstrap(const Cpu: TCpu8088): Boolean;
+var
+  I: Integer;
+  TestProgram: TMemoryStream;
+begin
+  Result := False;
+  if BootstrapFile.IsEmpty then Exit;
+
+  TestProgram := TMemoryStream.Create;
+  TestProgram.LoadFromFile(BootstrapFile);
+  I := 0;
+  while TestProgram.Position < TestProgram.Size do
+  begin
+    Cpu.MemoryBus.InvokeWrite(Cpu, $600 + I, TestProgram.ReadByte);
+    Inc(I);
+  end;
+  Cpu.Registers.CS := $60;
+  Cpu.Registers.DS := $60;
+  Cpu.Registers.ES := $60;
+  Cpu.Registers.SS := $60;
+  Cpu.Registers.IP := $0;
+  Cpu.Registers.SP := $FFFE;
+  TestProgram.Free;
+  Result := True
 end;
 
 procedure TApp.RenderDisplay(AVideo: TVideoController);
@@ -614,6 +651,48 @@ begin
   end;
 end;
 
+procedure TApp.HandleLoadFromTape(ACpu: TCpu8088);
+var
+  Segment, Offset, BytesToRead: Word;
+  Addr: TPhysicalAddress;
+  Counter: Word;
+  Data: Byte;
+begin
+  if not Assigned(FTapeStream) then
+  begin
+    ACpu.Registers.AH := 4;  { Error: timeout }
+    ACpu.Registers.Flags.CF := True;
+    Exit;
+  end;
+
+  Offset := ACpu.Registers.BX;
+  BytesToRead := ACpu.Registers.CX;
+  if (BytesToRead mod 256) <> 0 then
+    BytesToRead := ((BytesToRead div 256) + 1) * 256;
+
+  for Counter := 1 to BytesToRead do
+  begin
+    if (FTapeStream.Position >= FTapeStream.Size) then
+    begin
+      ACpu.Registers.AH := 2;  { Error: data loss }
+      ACpu.Registers.DX := Counter - 1;
+      ACpu.Registers.Flags.CF := True;
+      Exit;
+    end;
+
+    Data := FTapeStream.ReadByte;
+    if Counter > ACpu.Registers.CX then Continue;
+
+    Addr := (ACpu.Registers.ES shl 4) + Offset;
+    ACpu.MemoryBus.InvokeWrite(ACpu, Addr, Data);
+    Inc(Offset);
+  end;
+
+  ACpu.Registers.BX := Offset;
+  ACpu.Registers.DX := ACpu.Registers.CX;
+  ACPu.Registers.Flags.CF := False;
+end;
+
 procedure TApp.UpdateKeyboard(AKeyboard: TKeyboard);
 var
   Item: specialize TPair<TKeyboard.TKey, specialize TArray<RayLib.TKeyboardKey>>;
@@ -630,17 +709,11 @@ end;
 function TApp.InterruptHook(ASender: TObject; ANumber: Byte): Boolean;
 var
   Cpu: TCpu8088 absolute ASender;
-  TestProgram: TMemoryStream;
-  I: Integer;
 begin
   //Writeln(Format('INT %.x', [ANumber]));
 
   Result := False;
   case ANumber of
-    $02:
-      begin
-        Inc(FNmiCounter);
-      end;
     $10:
       begin
         if Cpu.Registers.AH = $0E then
@@ -657,28 +730,18 @@ begin
         }
       end;
 
-    $19:
-      if not BootstrapFile.IsEmpty then
-      begin
-        TestProgram := TMemoryStream.Create;
-        TestProgram.LoadFromFile(BootstrapFile);
-        I := 0;
-        while TestProgram.Position < TestProgram.Size do
-        begin
-          Cpu.MemoryBus.InvokeWrite(Cpu, $600 + I, TestProgram.ReadByte);
-          Inc(I);
-        end;
-        Cpu.Registers.CS := $60;
-        Cpu.Registers.DS := $60;
-        Cpu.Registers.ES := $60;
-        Cpu.Registers.SS := $60;
-        Cpu.Registers.IP := $0;
-        Cpu.Registers.SP := $FFFE;
-        TestProgram.Free;
-        Result := True
+    $15:
+      case Cpu.Registers.AH of
+        2:
+          begin
+            HandleLoadFromTape(Cpu);
+            Result := True;
+          end;
+      else;
       end;
-  end;
 
+    $19: Result := HandleBootstrap(Cpu);
+  end;
 end;
 
 function TApp.OnBeforeInstruction(ASender: TObject; AAddress: TPhysicalAddress): Boolean;
@@ -717,7 +780,7 @@ var
   DumpFrame: Dump.TDumpFrame;
 begin
   if not Assigned(FDumpStream) then Exit;
-  if AInstruction.CS <> $C000 then Exit;
+  if AInstruction.CS = $F000 then Exit;
 
   DumpFrame := BuldDumpFrame(Cpu, (AInstruction.CS shl 4) + AInstruction.IP);
   DumpFrame.CS := AInstruction.CS;
