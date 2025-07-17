@@ -6,7 +6,7 @@ interface
 
 uses
   Classes, SysUtils,
-  Cpu8088, VideoController, Hardware;
+  Cpu8088, VideoController, Hardware, Timer;
 
 type
 
@@ -18,6 +18,7 @@ type
     FIOBus: IIOBus;
     FMemoryBus: IMemoryBus;
     FVideo: TVideoController;
+    FTimer: TPit8253;
     FMemory: specialize TArray<IMemoryBusDevice>;
     procedure SetCpu(AValue: TCpu8088);
     procedure SetIOBus(AValue: IIOBus);
@@ -27,6 +28,7 @@ type
     property MemoryBus: IMemoryBus read FMemoryBus write SetMemoryBus;
     property IOBus: IIOBus read FIOBus write SetIOBus;
     property Video: TVideoController read FVideo;
+    property Timer: TPit8253 read FTimer;
     procedure Tick;
     procedure Run(ATicks: Integer=1000);
     procedure Initialize;
@@ -35,6 +37,7 @@ type
     procedure InstallIOBus(AIOBus: IIOBus);
     procedure InstallMemory(AMemory: IMemoryBusDevice);
     procedure InstallVideo(AVideo: TVideoController);
+    procedure InstallTimer(ATimer: TPit8253);
   end;
 
 implementation
@@ -62,6 +65,7 @@ end;
 procedure TMachine.Tick;
 begin
   Cpu.Tick;
+  Timer.Tick;
   Video.Tick;
 end;
 
@@ -102,6 +106,12 @@ begin
     IOBus.AttachDevice(FVideo);
   end;
 
+  if Assigned(FTimer) then
+  begin
+    { Todo: wire through a i8259 }
+    IOBus.AttachDevice(FTimer);
+  end;
+
   for MemoryBlock in FMemory do
     MemoryBus.AttachDevice(MemoryBlock);
 
@@ -131,6 +141,11 @@ end;
 procedure TMachine.InstallVideo(AVideo: TVideoController);
 begin
   FVideo := AVideo;
+end;
+
+procedure TMachine.InstallTimer(ATimer: TPit8253);
+begin
+  FTimer := ATimer;
 end;
 
 end.

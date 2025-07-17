@@ -14,10 +14,10 @@ uses
   Classes, SysUtils, StrUtils, Math, StreamEx, bufstream, Generics.Collections,
   RayLib, RayMath,
   Cpu8088, Memory, IO, Machine, VideoController, Interrupts, Hardware, Debugger,
-  Keyboard, Dump;
+  Keyboard, Dump, Timer;
 
 const
-  ClockSpeed = 1000 * 500;
+  ClockSpeed = 1000 * 275;
   FPS = 50;
   CyclesPerFrame = ClockSpeed div FPS;
 
@@ -64,6 +64,7 @@ type
     FKeyboardMap: TKeyboardMap;
     FKeyboard: TKeyboard;
     FTapeStream: TStream;
+    FComputer: TMachine;
     constructor Create;
     destructor Destroy; override;
     procedure Run;
@@ -75,6 +76,7 @@ type
     procedure UpdateKeyboard(AKeyboard: TKeyboard);
     function BuildMachine: TMachine;
     function InterruptHook(ASender: TObject; ANumber: Byte): Boolean;
+    procedure TimerOutputChange(ASender: TObject; AChannel: Integer; AValue: Boolean);
     function OnBeforeInstruction(ASender: TObject; AAddress: TPhysicalAddress
       ): Boolean;
     procedure OnAfterInstruction(ASender: TObject; AInstruction: TInstruction);
@@ -97,10 +99,13 @@ begin
   { I/O }
   Result.InstallIOBus(TIOBus.Create(Result));
 
+  { Timer }
+  Result.InstallTimer(TPit8253.Create(Result, CyclesPerFrame * FPS));
+
   { RAM / ROM }
   Result.InstallMemoryBus(TMemoryBus.Create(Result));
 
-  Ram := TRamMemoryBlock.Create(Result, 1024 * 608, RamAddress);
+  Ram := TRamMemoryBlock.Create(Result, 1024 * 96, RamAddress);
   Result.InstallMemory(Ram);
 
   BiosRom := TRomMemoryBlock.Create(Result, 1024 * 8, BiosAddress);
@@ -208,11 +213,13 @@ begin
   SetTextureFilter(Target.texture, TEXTURE_FILTER_BILINEAR);
 
   Computer := BuildMachine;
+  FComputer := Computer;
 
   Computer.Cpu.InterruptHook := @InterruptHook;
   Computer.Cpu.OnBeforeInstruction := @OnBeforeInstruction;
   Computer.Cpu.OnAfterInstruction := @OnAfterInstruction;
   Computer.Cpu.OnBeforeExecution := @OnBeforeExecution;
+  Computer.Timer.OnChannelOutputChange := @TimerOutputChange;
 
   ScanlineShader := LoadShader(Nil, TextFormat('scanlines.fs'));
 
@@ -247,7 +254,7 @@ begin
           Computer.Run(1);
           if FStepByStep then Break;
         end;
-
+{
         if (FFrames > 20) then
         begin
           if (Computer.Cpu.Ticks mod 5000) = 0 then
@@ -257,7 +264,7 @@ begin
             if FKeybEnabled then
               Computer.Cpu.RaiseHardwareInterrupt($0E);  { Todo: TIMER1 }
         end;
-
+ }
       end else
       begin
         if IsKeyPressed(KEY_F7) or IsKeyPressedRepeat(KEY_F7) then
@@ -741,6 +748,19 @@ begin
       end;
 
     $19: Result := HandleBootstrap(Cpu);
+  end;
+end;
+
+procedure TApp.TimerOutputChange(ASender: TObject; AChannel: Integer;
+  AValue: Boolean);
+begin
+  if FFrames < 10 then Exit;  { Todo }
+
+  case AChannel of
+    0: FComputer.Cpu.RaiseHardwareInterrupt($08);
+    1: FComputer.Cpu.RaiseHardwareInterrupt($0E);
+    2: begin end;
+  else;
   end;
 end;
 
