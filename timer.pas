@@ -50,7 +50,7 @@ type
         procedure SetReloadValue(AValue: Word);
       public
         type
-          TState = (csWaitingLoByte, csWaitingHiByte, csValueSet, csCounting);
+          TState = (csUninitialized, csWaitingLoByte, csWaitingHiByte, csValueSet, csCounting);
       public
         CountingMode: TCountMode;
         AccessMode: TAccessMode;
@@ -71,6 +71,7 @@ type
         procedure WriteLoByte(AValue: Byte);
         function ReadValue: Byte;
         procedure WriteLatch;
+        procedure Reset;
       end;
 
       TCommand = bitpacked record
@@ -121,6 +122,7 @@ type
     property SpeakerOutput: Boolean read GetSpeakerOutput;
     constructor Create(AOwner: TComponent; AActualFrequency: Integer); reintroduce;
     procedure Tick;
+    procedure Reset;
     property OnChannelOutputChange: TTimerOutputNotify read FOnChannelOutputChange write SetOnChannelOutputChange;
     property Output[AChannel: Integer]: Boolean read GetOutput; default;
     function GetIOBus: IIOBus;
@@ -175,8 +177,10 @@ begin
   if Channel.CountingMode = cmBcd then
     raise Exception.Create('BCD counting mode: not implemented');
 
+  {
   Writeln('Channel ', ACommand.Channel, ' set to ', ACommand.OperatingMode, ' mode. ' +
     'Acc mode: ', ACommand.AccessMode);
+  }
 
   Channel.AccessMode := ACommand.AccessMode;
   Channel.OperatingMode := ACommand.OperatingMode;
@@ -206,9 +210,9 @@ begin
   FChannels[1].Output := True;
   FChannels[2].Output := True;
 
-  //FChannels[2].LowPassFilter := True;
-
   FSpeaker := TSpeaker.Create(Self);
+
+  Reset;
 end;
 
 procedure TPit8253.Tick;
@@ -234,11 +238,13 @@ begin
     Speaker.GateInputs[2] := FChannels[2].Output
   else
     Speaker.GateInputs[2] := True;
-  {
-  if (FChannels[2].InternalDivisor > 64) then
-    Speaker.PinState := Speaker.PinState and FChannels[2].Output;
-  }
-  //Speaker.Tick;
+end;
+
+procedure TPit8253.Reset;
+var
+  Channel: TChannel;
+begin
+  for Channel in FChannels do Channel.Reset;
 end;
 
 function TPit8253.GetIOBus: IIOBus;
@@ -268,7 +274,7 @@ begin
     $40..$42:
       begin
         AData := FChannels[AAddress - $40].ReadValue;
-        //Writeln('Read ch ', AAddress - $40, ': ', AData);
+        { Writeln('Read channel ', AAddress - $40, ': ', AData); }
         Result := True;
       end;
 
@@ -295,14 +301,14 @@ begin
     $40..$42:
       begin
         FChannels[AAddress - $40].WriteReloadValue(AData);
-        //Writeln('Channel ', AAddress - $40, ', reload val: ', AData);
+        { Writeln('Channel ', AAddress - $40, ', reload val: ', AData); }
       end;
 
     $43: WriteCommandPort(TCommand(AData));
 
     $61:
       begin
-        Writeln('Wrote to 61H: ', IntToHex(AData), 'h');
+        //Writeln('Wrote to 61H: ', IntToHex(AData), 'h');
         {
           This is supposed to be bit 0 but that doesn't work right.
           I've no ideas.
@@ -418,9 +424,10 @@ begin
 
   if State = csValueSet then
 
+  {
   Writeln('Divisor set to ', InternalDivisor,
     ' [', OperatingMode ,', ', AccessMode, ']; Gate: ', Gate, ', Out: ', Output);
-
+  }
 
   case State of
     csValueSet:
@@ -541,6 +548,13 @@ begin
   end;
 end;
 
+procedure TPit8253.TChannel.Reset;
+begin
+  State := csUninitialized;
+  Value := 65535;
+  InternalDivisor := 65536;
+end;
+
 { TPit8253.TSpeaker }
 
 function TPit8253.TSpeaker.GetOutput: Boolean;
@@ -555,25 +569,14 @@ end;
 
 procedure TPit8253.TSpeaker.Tick;
 begin
-  raise Exception.Create('Do not use');
-  {
-  Dec(CountDown);
-  if (CountDown > 0) or (SampleCount >= Length(Samples)) then Exit;
 
-  {Write(Samples[SampleCount], ' ');}
-
-  {Samples[SampleCount] := IfThen(PinState, 255, 0);}
-  SampleCount := SampleCount + 1;
-  {Writeln(SampleCount);}
-  CountDown := Divisor;
-  }
 end;
 
 procedure TPit8253.TSpeaker.CaptureSample;
 begin
   if SampleCount >= Length(Samples) then Exit;
 
-  Samples[SampleCount] := 127 + IfThen(Output, 64, -64);
+  Samples[SampleCount] := IfThen(Output, 0, 255);
   Inc(SampleCount);
 end;
 
