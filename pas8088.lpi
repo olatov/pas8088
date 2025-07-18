@@ -135,13 +135,18 @@
         <IsPartOfProject Value="True"/>
         <UnitName Value="Keyboard"/>
       </Unit>
+      <Unit>
+        <Filename Value="timer.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Timer"/>
+      </Unit>
     </Units>
     <Debugger>
       <ClassConfig Version="1">
         <Config ConfigName="New" ConfigClass="TFpDebugDebugger" Active="True" UID="{3358E130-9516-4007-A204-35CC086810AB}"/>
       </ClassConfig>
       <DisplayFormatConfigs>
-        <dtfGlobal NumInherit="False" Num="vdfBaseHex" SepHex="vdfhsByte" StructAddrInherit="False" StructAddr="vdfAddressTyped" PointerAddrInherit="False" PointerAddr="vdfAddressTyped"/>
+        <dtfGlobal NumInherit="False" SepHex="vdfhsByte" StructAddrInherit="False" StructAddr="vdfAddressTyped" PointerAddrInherit="False" PointerAddr="vdfAddressTyped"/>
       </DisplayFormatConfigs>
     </Debugger>
   </ProjectOptions>

@@ -41,17 +41,36 @@ type
       { TChannel }
 
       TChannel = class(TComponent)
+      private
+        FGate: Boolean;
+        FOperatingMode: TOperatingMode;
+        FReloadValue: Word;
+        procedure SetGate(AValue: Boolean);
+        procedure SetOperatingMode(AValue: TOperatingMode);
+        procedure SetReloadValue(AValue: Word);
+      public
+        type
+          TState = (csWaitingLoByte, csWaitingHiByte, csValueSet, csCounting);
       public
         CountingMode: TCountMode;
         AccessMode: TAccessMode;
         AccessState: TAccessState;
-        OperatingMode: TOperatingMode;
-        Value, ReloadValue: Integer;
+        State: TState;
+        Value, InternalDivisor: Integer;
+        NewValue: Integer;
         Output: Boolean;
-        Latch: specialize TNullable<Word>;
+        SquareModeTrigger: Boolean;
+        ReadIndex: (riHiByte, riLoByte);
+        LatchHiByte, LatchLoByte: specialize TNullable<Byte>;
+        property Gate: Boolean read FGate write SetGate;
+        property OperatingMode: TOperatingMode read FOperatingMode write SetOperatingMode;
+        property ReloadValue: Word read FReloadValue write SetReloadValue;
         procedure Tick;
         procedure WriteReloadValue(AValue: Byte);
+        procedure WriteHiByte(AValue: Byte);
+        procedure WriteLoByte(AValue: Byte);
         function ReadValue: Byte;
+        procedure WriteLatch;
       end;
 
       TCommand = bitpacked record
@@ -64,17 +83,42 @@ type
   public
     type
       TTimerOutputNotify = procedure(ASender: TObject; AChannel: Integer; AValue: Boolean) of object;
+
+      {
+        Todo: making a part of timer class to simplify connection to channel 2 output.
+        Rewire properly later.
+      }
+
+      { TSpeaker }
+
+      TSpeaker = class(TComponent)
+      private
+        function GetOutput: Boolean;
+      public
+        Samples: array[0..32767] of Byte;
+        SampleCount: Integer;
+        GateInputs: array[1..2] of Boolean;
+        property Output: Boolean read GetOutput;
+        procedure BeginAudioChunk;
+        procedure Tick;
+        procedure CaptureSample;
+      end;
   private
     FIOBus: IIOBus;
     FChannels: array[0..(ChannelsCount - 1)] of TChannel;
     FLatch: Word;
     FOnChannelOutputChange: TTimerOutputNotify;
     FTickBatchSize: Integer;
+    FSpeaker: TSpeaker;
+    FSpeakerGate: Boolean;
     function GetOutput(AChannel: Integer): Boolean;
+    function GetSpeakerOutput: Boolean;
     procedure SetOnChannelOutputChange(AValue: TTimerOutputNotify);
     procedure WriteChannelPort(AChannel: Integer; AValue: Byte);
     procedure WriteCommandPort(ACommand: TCommand);
   public
+    property Speaker: TSpeaker read FSpeaker;
+    property SpeakerOutput: Boolean read GetSpeakerOutput;
     constructor Create(AOwner: TComponent; AActualFrequency: Integer); reintroduce;
     procedure Tick;
     property OnChannelOutputChange: TTimerOutputNotify read FOnChannelOutputChange write SetOnChannelOutputChange;
@@ -108,6 +152,11 @@ begin
   Result := FChannels[AChannel].Output;
 end;
 
+function TPit8253.GetSpeakerOutput: Boolean;
+begin
+
+end;
+
 procedure TPit8253.WriteCommandPort(ACommand: TCommand);
 var
   Channel: TChannel;
@@ -116,19 +165,27 @@ begin
 
   Channel := FChannels[ACommand.Channel];
 
-  case ACommand.AccessMode of
-    amLatch:
-      Channel.Latch := Min(Channel.Value, $FFFF);
-  else
-    Channel.CountingMode := ACommand.CountMode;
-    if Channel.CountingMode = cmBcd then
-      raise Exception.Create('BCD counting mode: not implemented');
-
-    Channel.AccessMode := ACommand.AccessMode;
-    Channel.AccessState := asLoByte;
-    Channel.OperatingMode := ACommand.OperatingMode;
-    Channel.Latch := Null;
+  if ACommand.AccessMode = amLatch then
+  begin
+    Channel.WriteLatch;
+    Exit;
   end;
+
+  Channel.CountingMode := ACommand.CountMode;
+  if Channel.CountingMode = cmBcd then
+    raise Exception.Create('BCD counting mode: not implemented');
+
+  Writeln('Channel ', ACommand.Channel, ' set to ', ACommand.OperatingMode, ' mode. ' +
+    'Acc mode: ', ACommand.AccessMode);
+
+  Channel.AccessMode := ACommand.AccessMode;
+  Channel.OperatingMode := ACommand.OperatingMode;
+  if Channel.AccessMode = amHiByte then
+    Channel.ReadIndex := riHiByte
+  else
+    Channel.ReadIndex := riLoByte;
+
+  if Channel.AccessMode = amHiByte then Channel.AccessState := asHiByte;
 end;
 
 constructor TPit8253.Create(AOwner: TComponent; AActualFrequency: Integer);
@@ -140,6 +197,18 @@ begin
 
   for I := 0 to High(FChannels) do
     FChannels[I] := TChannel.Create(Self);
+
+  FChannels[0].Gate := True;
+  FChannels[1].Gate := True;
+  FChannels[2].Gate := False;
+
+  FChannels[0].Output := True;
+  FChannels[1].Output := True;
+  FChannels[2].Output := True;
+
+  //FChannels[2].LowPassFilter := True;
+
+  FSpeaker := TSpeaker.Create(Self);
 end;
 
 procedure TPit8253.Tick;
@@ -149,6 +218,7 @@ var
   Old: Boolean;
 begin
   for I := 1 to FTickBatchSize do
+  begin
     for ChannelNumber := 0 to High(FChannels) do
     begin
       Channel := FChannels[ChannelNumber];
@@ -158,6 +228,17 @@ begin
       if (Channel.Output <> Old) and Assigned(OnChannelOutputChange) then
         OnChannelOutputChange(Self, ChannelNumber, Channel.Output);
     end;
+  end;
+
+  if (FChannels[2].InternalDivisor > 64) then
+    Speaker.GateInputs[2] := FChannels[2].Output
+  else
+    Speaker.GateInputs[2] := True;
+  {
+  if (FChannels[2].InternalDivisor > 64) then
+    Speaker.PinState := Speaker.PinState and FChannels[2].Output;
+  }
+  //Speaker.Tick;
 end;
 
 function TPit8253.GetIOBus: IIOBus;
@@ -187,6 +268,7 @@ begin
     $40..$42:
       begin
         AData := FChannels[AAddress - $40].ReadValue;
+        //Writeln('Read ch ', AAddress - $40, ': ', AData);
         Result := True;
       end;
 
@@ -194,7 +276,14 @@ begin
       begin
         { read command port ? }
         Result := False;
-      end
+      end;
+
+    $61:
+      begin
+        AData := IfThen(FChannels[2].Output, $20, 0)
+          or IfThen(Speaker.GateInputs[1], $02, 0);
+        Result := True;
+      end;
   else
     Result := False;
   end;
@@ -203,26 +292,95 @@ end;
 procedure TPit8253.OnIOWrite(Sender: IIOBusDevice; AAddress: Word; AData: Byte);
 begin
   case AAddress of
-    $40..$42: FChannels[AAddress - $40].WriteReloadValue(AData);
+    $40..$42:
+      begin
+        FChannels[AAddress - $40].WriteReloadValue(AData);
+        //Writeln('Channel ', AAddress - $40, ', reload val: ', AData);
+      end;
 
     $43: WriteCommandPort(TCommand(AData));
+
+    $61:
+      begin
+        Writeln('Wrote to 61H: ', IntToHex(AData), 'h');
+        {
+          This is supposed to be bit 0 but that doesn't work right.
+          I've no ideas.
+          FChannels[2].Gate := (AData and 1) <> 0;
+        }
+        FChannels[2].Gate := True;
+
+        Speaker.GateInputs[1] := (AData and 2) <> 0;
+      end;
   end;
 end;
 
 { TPit8253.TChannel }
 
+procedure TPit8253.TChannel.SetOperatingMode(AValue: TOperatingMode);
+begin
+  FOperatingMode := AValue;
+
+  case AValue of
+    omInterruptOnTerminalCount, omSquareWaveGenerator:
+      begin
+        Output := False;
+        State := specialize IfThen<TState>(
+          AccessMode = amHiByte, csWaitingHiByte, csWaitingLoByte);
+      end;
+
+    omRateGenerator:
+      begin
+        Output := True;
+        State := specialize IfThen<TState>(
+          AccessMode = amHiByte, csWaitingHiByte, csWaitingLoByte);
+      end
+  else
+    raise Exception.CreateFmt('Implement me: operating mode %d', [Ord(AValue)]);
+  end;
+end;
+
+procedure TPit8253.TChannel.SetGate(AValue: Boolean);
+begin
+  if FGate = AValue then Exit;
+  FGate := AValue;
+
+  case OperatingMode of
+    omRateGenerator, omRateGeneratorDuplicate:
+      case AValue of
+        True: Value := InternalDivisor;
+        False: Output := True;
+      end;
+  end;
+end;
+
+procedure TPit8253.TChannel.SetReloadValue(AValue: Word);
+begin
+  FReloadValue := AValue;
+  InternalDivisor := IfThen(AValue > 0, AValue, 65536);
+end;
+
 procedure TPit8253.TChannel.Tick;
 begin
+  if not (Gate and (State = csCounting)) then Exit;
+
   Dec(Value);
 
   case OperatingMode of
     omInterruptOnTerminalCount:
-      if Value = 0 then Output := True;
+      if Value = 0 then
+      begin
+        Output := True;
+      end;
 
     omRateGenerator, omRateGeneratorDuplicate:
       case Value of
         1: Output := False;
-        0: Output := True;
+        0:
+          begin
+            Output := True;
+            Value := InternalDivisor;
+          end;
       else
         { no change }
       end;
@@ -230,7 +388,11 @@ begin
     omSquareWaveGenerator, omSquareWaveGeneratorDuplicate:
       begin
         Dec(Value);  { This mode decrements 2x }
-        if Value <= 1 then Output := not Output;
+        if Value <= 0 then
+        begin
+          Output := not Output;
+          Value := InternalDivisor;
+        end;
       end;
 
     else
@@ -238,64 +400,181 @@ begin
         'PIT operating mode %d: not implemented', [Ord(OperatingMode)]);
   end;
 
-  if Value < 0 then
-    Value := IfThen(ReloadValue > 0, ReloadValue, 65536) - Abs(Value);
+  if Value < 0 then Value := IfThen(ReloadValue > 1, ReloadValue, 65535);
 end;
 
 procedure TPit8253.TChannel.WriteReloadValue(AValue: Byte);
 begin
-  case AccessState of
-    asLoByte:
-      begin
-        ReloadValue := (ReloadValue and $FF00) or AValue;
-        if AccessMode = amLoByteHiByte then AccessState := asHiByte;
-      end;
-
-    asHiByte:
-      begin
-        ReloadValue := (ReloadValue and $FF) or (AValue shl 8);
-        AccessState := asLoByte;
+  case State of
+    csWaitingLoByte: WriteLoByte(AValue);
+    csWaitingHiByte: WriteHiByte(Avalue);
+    csCounting:
+      case AccessMode of
+        amLatch: raise Exception.Create('Invalid access mode');
+        amLoByte, amLoByteHiByte: WriteLoByte(AValue);
+        amHiByte: WriteHiByte(AValue);
       end;
   end;
 
-  Output := False; { Todo }
+  if State = csValueSet then
+
+  Writeln('Divisor set to ', InternalDivisor,
+    ' [', OperatingMode ,', ', AccessMode, ']; Gate: ', Gate, ', Out: ', Output);
+
+
+  case State of
+    csValueSet:
+      case OperatingMode of
+        omInterruptOnTerminalCount:
+          begin
+            Value := InternalDivisor;
+            State := csCounting;
+          end;
+
+        omRateGenerator:
+          begin
+            Value := InternalDivisor;
+            State := csCounting;
+          end;
+
+        omSquareWaveGenerator, omSquareWaveGeneratorDuplicate:
+          begin
+            if Odd(InternalDivisor) then Dec(InternalDivisor);
+            if InternalDivisor = 0 then InternalDivisor := 65536;
+            Value := InternalDivisor;
+            State := csCounting;
+          end;
+      end;
+  end;
+end;
+
+procedure TPit8253.TChannel.WriteHiByte(AValue: Byte);
+begin
+  Assert(State in [csWaitingLoByte, csWaitingHiByte]);
+  Assert(AccessMode in [amHiByte, amLoByteHiByte]);
+
+  ReloadValue := Lo(ReloadValue) or (AValue shl 8);
+  State := csValueSet;
+end;
+
+procedure TPit8253.TChannel.WriteLoByte(AValue: Byte);
+begin
+  Assert(State in [csWaitingLoByte, csCounting]);
+  Assert(AccessMode in [amLoByte, amLoByteHiByte]);
+
+  ReloadValue := Hi(ReloadValue) or AValue;
+  State := specialize IfThen<TState>(
+    AccessMode = amLoByteHiByte,
+    csWaitingHiByte, csValueSet)
 end;
 
 function TPit8253.TChannel.ReadValue: Byte;
 begin
   case AccessMode of
     amLoByte:
+      if LatchLoByte.HasValue then
       begin
-        Result := Lo(Latch.ValueOr(Value));
-        Latch := Null;
+        Result := LatchLoByte.Value;
+        LatchLoByte.Clear;
+      end else
+        Result := Lo(Value);
+
+    amHiByte:
+      if LatchHiByte.HasValue then
+      begin
+        Result := LatchHiByte.Value;
+        LatchHiByte.Clear;
+      end else
+        Result := Hi(Value);
+
+    amLoByteHiByte:
+      case ReadIndex of
+        riHiByte:
+          begin
+            if LatchHiByte.HasValue then
+            begin
+              Result := LatchHiByte.Value;
+              LatchHiByte.Clear;
+            end else
+              Result := Hi(Value);
+            ReadIndex := riLoByte;
+          end;
+
+        riLoByte:
+          begin
+            if LatchLoByte.HasValue then
+            begin
+              Result := LatchLoByte.Value;
+              LatchLoByte.Clear;
+            end else
+              Result := Lo(Value);
+            ReadIndex := riHiByte;
+          end;
+      end
+  else
+    raise Exception.CreateFmt('Invalid access mode: %d', [Ord(AccessMode)]);
+  end;
+end;
+
+procedure TPit8253.TChannel.WriteLatch;
+begin
+  case AccessMode of
+    amLatch: raise Exception.Create('Invalid access mode');
+
+    amLoByte:
+      begin
+        LatchLoByte := Lo(Value);
+        LatchHiByte := Null;
       end;
 
     amHiByte:
       begin
-        Result := Hi(Latch.ValueOr(Value));
-        Latch := Null;
+        LatchLoByte := Null;
+        LatchHiByte := Hi(Value);
       end;
 
     amLoByteHiByte:
       begin
-        case AccessState of
-          asLoByte:
-            begin
-              Result := Lo(Latch.ValueOr(Value));
-              AccessState := asHiByte;
-            end;
-
-          asHiByte:
-            begin
-              Result := Hi(Latch.ValueOr(Value));
-              Latch := Null;
-              AccessState := asLoByte;
-            end;
-        end;
+        LatchLoByte := Lo(Word(Value));
+        LatchHiByte := Hi(Word(Value));
       end;
-  else
-    raise Exception.CreateFmt('Invalid access mode: %d', [Ord(AccessMode)]);
   end;
+end;
+
+{ TPit8253.TSpeaker }
+
+function TPit8253.TSpeaker.GetOutput: Boolean;
+begin
+  Result := GateInputs[1] and GateInputs[2];
+end;
+
+procedure TPit8253.TSpeaker.BeginAudioChunk;
+begin
+  SampleCount := 0;
+end;
+
+procedure TPit8253.TSpeaker.Tick;
+begin
+  raise Exception.Create('Do not use');
+  {
+  Dec(CountDown);
+  if (CountDown > 0) or (SampleCount >= Length(Samples)) then Exit;
+
+  {Write(Samples[SampleCount], ' ');}
+
+  {Samples[SampleCount] := IfThen(PinState, 255, 0);}
+  SampleCount := SampleCount + 1;
+  {Writeln(SampleCount);}
+  CountDown := Divisor;
+  }
+end;
+
+procedure TPit8253.TSpeaker.CaptureSample;
+begin
+  if SampleCount >= Length(Samples) then Exit;
+
+  Samples[SampleCount] := 127 + IfThen(Output, 64, -64);
+  Inc(SampleCount);
 end;
 
 end.

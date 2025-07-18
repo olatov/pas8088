@@ -9,7 +9,7 @@ program pas8088;
 
 uses
   {$IFDEF UNIX}
-  //cthreads,
+  cthreads,
   {$ENDIF}
   Classes, SysUtils, StrUtils, Math, StreamEx, bufstream, Generics.Collections,
   RayLib, RayMath,
@@ -17,9 +17,12 @@ uses
   Keyboard, Dump, Timer;
 
 const
-  ClockSpeed = 1000 * 275;
+  ClockSpeed = 250000;
   FPS = 50;
   CyclesPerFrame = ClockSpeed div FPS;
+
+  SpeakerSampleRate = 44100;
+  SpeakerSamplesPerFrame = SpeakerSampleRate div FPS;
 
   DBG = False;
 
@@ -29,6 +32,17 @@ const
   BiosAddress  = $FE000;
   VideoAddress = $B8000;
 
+type
+
+  { TRingBuffer }
+
+  TRingBuffer = class
+    Data: array[0..((44100 div 5) - 1)] of Byte;
+    ReadIndex, WriteIndex: Integer;
+    procedure Write(AValue: Byte);
+    function Read(AFallback: Byte = 0): Byte;
+  end;
+
 var
   BiosFile: String = 'poisk_1991.rom';
   CartFile: String = 'basicc11.cart';
@@ -37,6 +51,8 @@ var
   DumpFile: String = '';
 
   Breakpoints: array of TPhysicalAddress = ($00000);
+
+  AudioBuffer: TRingBuffer;
 
 type
   { TApp }
@@ -65,6 +81,7 @@ type
     FKeyboard: TKeyboard;
     FTapeStream: TStream;
     FComputer: TMachine;
+    FAudioCount: Integer;
     constructor Create;
     destructor Destroy; override;
     procedure Run;
@@ -81,6 +98,38 @@ type
       ): Boolean;
     procedure OnAfterInstruction(ASender: TObject; AInstruction: TInstruction);
   end;
+
+procedure AudioCallback(buffer: Pointer; frames: LongWord); cdecl; forward;
+
+{ TRingBuffer }
+
+procedure TRingBuffer.Write(AValue: Byte);
+var
+  NewIndex: Integer;
+begin
+  NewIndex := WriteIndex + 1;
+  if NewIndex > High(Data) then NewIndex := 0;
+  if NewIndex = ReadIndex then
+  begin
+    //Writeln('Buffer full');
+    Exit;
+  end;
+
+  Data[WriteIndex] := AValue;
+  WriteIndex := NewIndex;
+end;
+
+function TRingBuffer.Read(AFallback: Byte = 0): Byte;
+begin
+  if ReadIndex = WriteIndex then
+  begin
+    //Writeln('Buffer Empty')
+    Exit(AFallback);
+  end;
+  Result := Data[ReadIndex];
+  Inc(ReadIndex);
+  if ReadIndex > High(Data) then ReadIndex := 0;
+end;
 
 function TApp.BuildMachine: TMachine;
 var
@@ -100,7 +149,7 @@ begin
   Result.InstallIOBus(TIOBus.Create(Result));
 
   { Timer }
-  Result.InstallTimer(TPit8253.Create(Result, CyclesPerFrame * FPS));
+  Result.InstallTimer(TPit8253.Create(Result, ClockSpeed));
 
   { RAM / ROM }
   Result.InstallMemoryBus(TMemoryBus.Create(Result));
@@ -176,10 +225,11 @@ procedure TApp.Run;
 var
   Computer: TMachine;
   ScanlineShader: TShader;
-  LinesLoc, I: Integer;
+  LinesLoc, I, Underruns, CyclesPerSample: Integer;
   Tmp: Single = 400.0;
   Listing: array of TDebugger.TSourceLine;
   PrevTicks: QWord = 0;
+  SpeakerStream: TAudioStream;
 
   procedure LoadBytesToDebugger(AMemoryBus: IMemoryBus; AAddress: TPhysicalAddress);
   var
@@ -201,6 +251,8 @@ begin
   FDebug := DBG;
 
   if ParamCount >= 1 then BootstrapFile := ParamStr(1);
+
+  InitAudioDevice;
 
   SetConfigFlags(FLAG_WINDOW_RESIZABLE);
   InitWindow(800, 600, 'Poisk');
@@ -226,6 +278,13 @@ begin
   LinesLoc := GetShaderLocation(ScanlineShader, 'lines');
   SetShaderValue(ScanlineShader, LinesLoc, @Tmp, SHADER_UNIFORM_FLOAT);
 
+
+  { Audio stream }
+  SetAudioStreamBufferSizeDefault(SpeakerSamplesPerFrame);
+  SpeakerStream := LoadAudioStream(SpeakerSampleRate, 8, 1);
+  SetAudioStreamCallback(SpeakerStream, @AudioCallback);
+  PlayAudioStream(SpeakerStream);
+
   FKeybEnabled := True;
 
   while not WindowShouldClose do
@@ -241,18 +300,32 @@ begin
 
     PrevTicks := Computer.Cpu.Ticks;
 
+    //Writeln(Computer.Timer.Speaker.SampleCount);
+    for I := 0 to Computer.Timer.Speaker.SampleCount - 1 do
+      AudioBuffer.Write(Computer.Timer.Speaker.Samples[I]);
+
     Computer.Video.BeginFrame;
+    Computer.Timer.Speaker.BeginAudioChunk;
+
+    Computer.Timer.Speaker.CaptureSample;
+    Computer.Timer.Speaker.CaptureSample;
+    Computer.Timer.Speaker.CaptureSample;
+
+    CyclesPerSample := (CyclesPerFrame div SpeakerSamplesPerFrame);
 
     try
       if (not FStepByStep) or (Computer.Cpu.Registers.CS >= $F000) then
       begin
-        for I := 1 to CyclesPerFrame do
+        for I := 0 to CyclesPerFrame - 1 do
         begin
           //if Computer.Cpu.Ticks = Trunc(ClockSpeed * 2) then FKeyboard[KeyF2] := True;
           //if Computer.Cpu.Ticks = Trunc(ClockSpeed * 2.2) then FKeyboard[KeyF2] := False;
 
-          Computer.Run(1);
+          Computer.Tick;
           if FStepByStep then Break;
+
+          if (Computer.Cpu.Ticks mod CyclesPerSample) = 0 then
+            Computer.Timer.Speaker.CaptureSample;
         end;
 {
         if (FFrames > 20) then
@@ -287,6 +360,8 @@ begin
           FStepByStep := False;
           Computer.Run(1);
         end;
+
+        //Computer.Timer.Speaker.CaptureSample;
       end;
 
     except
@@ -314,17 +389,24 @@ begin
           Vector2Zero, 0, WHITE);
       EndShaderMode;
       DrawRectangleLinesEx(
-        RectangleCreate(0, 0, GetScreenHeight * 1.333, GetScreenHeight), 1, DARKGRAY);
+        RectangleCreate(0, 0, GetScreenHeight * 1.333, GetScreenHeight), 1,
+        ColorBrightness(DARKGRAY, -0.25));
 
       if FStepByStep then
         RenderDebugger(Computer.Cpu);
     EndDrawing;
+
+    //Writeln('Audio count: ', FAudioCount);
+    //Writeln(Computer.Timer.Speaker.SampleCount);
   end;
 
   UnloadShader(ScanlineShader);
   UnloadRenderTexture(Target);
 
   CloseWindow;
+
+  UnloadAudioStream(SpeakerStream);
+  CloseAudioDevice;
 
   //Writeln;
   //Computer.Cpu.Registers.Log;
@@ -721,6 +803,10 @@ begin
 
   Result := False;
   case ANumber of
+    {
+    $08:
+      Writeln((Time*86400):12:9, ' :: INT 8');
+    }
     $10:
       begin
         if Cpu.Registers.AH = $0E then
@@ -754,12 +840,20 @@ end;
 procedure TApp.TimerOutputChange(ASender: TObject; AChannel: Integer;
   AValue: Boolean);
 begin
-  if FFrames < 10 then Exit;  { Todo }
+  {
+    Todo: Blocking h/w interrupts for first a little because
+    an interrupt running too early (before the IVT is initialized)
+    will break the execution. Review after i8259 is available.
+  }
+  if FFrames < FPS then Exit;
 
   case AChannel of
-    0: FComputer.Cpu.RaiseHardwareInterrupt($08);
-    1: FComputer.Cpu.RaiseHardwareInterrupt($0E);
-    2: begin end;
+    0: if AValue then FComputer.Cpu.RaiseHardwareInterrupt($08);
+    1: if AValue then FComputer.Cpu.RaiseHardwareInterrupt($0E);
+    2:
+      begin
+        if AValue then Inc(FAudioCount);
+      end;
   else;
   end;
 end;
@@ -826,14 +920,39 @@ begin
     ]));
 end;
 
+procedure AudioCallback(buffer: Pointer; Frames: LongWord); cdecl;
+var
+  I, C: Integer;
+  OutBuf: PByte;
+  Sample: Byte;
+begin
+  OutBuf := PByte(Buffer);
+  Sample := 0;
+{  Writeln(Format('RI: %d, WI: %d, Frames: %d', [
+    AudioBuffer.ReadIndex, AudioBuffer.WriteIndex, Frames
+  ]));
+}
+  C := Frames;
+  for I := 0 to Frames - 1 do
+  begin
+    Sample := AudioBuffer.Read(127);
+    OutBuf[I] := Sample;
+  end;
+  //if C <> 0 then Writeln('Short ', C);
+end;
+
 var
   App: TApp;
 
 begin
   SetExceptionMask(GetExceptionMask + [exInvalidOp, exOverflow, exZeroDivide]);
 
+  AudioBuffer := TRingBuffer.Create;
+
   App := TApp.Create;
   App.Run;
   App.Free;
+
+  AudioBuffer.Free;
 end.
 
