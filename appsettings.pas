@@ -29,7 +29,7 @@ type
       public
         Window: record
           Width, Height: Integer;
-          Aspect: Boolean;
+          AspectRatio: Double;
           FullScreen: Boolean;
         end;
 
@@ -71,11 +71,11 @@ begin
 
     Config.WriteInteger('Window', 'Width', Window.Width);
     Config.WriteInteger('Window', 'Height', Window.Height);
-    Config.WriteBool('Window', 'Aspect', Window.Aspect);
+    Config.WriteFloat('Window', 'AspectRatio', Window.AspectRatio);
     Config.WriteBool('Window', 'FullScreen', Window.FullScreen);
 
-    Config.WriteBool('Video', 'ScanLines', True);
-    Config.WriteBool('Video', 'GrayScale', False);
+    Config.WriteBool('Video', 'ScanLines', Video.ScanLines);
+    Config.WriteBool('Video', 'GrayScale', Video.GrayScale);
 
     Config.WriteBool('Audio', 'Mute', Audio.Mute);
     Config.WriteFloat('Audio', 'Volume', Audio.Volume);
@@ -92,12 +92,12 @@ begin
   try
     Machine.ClockSpeed := Config.ReadInteger('Machine', 'ClockSpeed', 250000);
     Machine.Ram := EnsureRange(
-      Config.ReadInteger('Machine', 'Ram', 608), 96, 608);
+      Config.ReadInteger('Machine', 'Ram', 640), 128, 640);
     Machine.BiosRom := 'poisk_1991.rom';
 
     Window.Width := Config.ReadInteger('Window', 'Width', 640);
     Window.Height := Config.ReadInteger('Window', 'Height', 400);
-    Window.Aspect := Config.ReadBool('Window', 'Aspect', False);
+    Window.AspectRatio := Config.ReadFloat('Window', 'AspectRatio', 0);
     Window.FullScreen := Config.ReadBool('Window', 'FullScreen', False);
 
     Video.ScanLines := Config.ReadBool('Video', 'ScanLines', True);

@@ -154,7 +154,8 @@ begin
   { RAM / ROM }
   Result.InstallMemoryBus(TMemoryBus.Create(Result));
 
-  Ram := TRamMemoryBlock.Create(Result, 1024 * Settings.Machine.Ram, RamAddress);
+  { System RAM = Total - 32 KB video }
+  Ram := TRamMemoryBlock.Create(Result, 1024 * (Settings.Machine.Ram - 32), RamAddress);
   Result.InstallMemory(Ram);
 
   BiosRomBlock := TRomMemoryBlock.Create(Result, 1024 * 8, BiosAddress);
@@ -343,7 +344,8 @@ begin
 
       if IsKeyPressed(KEY_G) then Settings.Video.Grayscale := not Settings.Video.GrayScale;
       if IsKeyPressed(KEY_S) then Settings.Video.ScanLines := not Settings.Video.ScanLines;
-      if IsKeyPressed(KEY_A) then Settings.Window.Aspect := not Settings.Window.Aspect;
+      if IsKeyPressed(KEY_A) then
+        Settings.Window.AspectRatio := IfThen(IsZero(Settings.Window.AspectRatio), 4/3, 0);
       if IsKeyPressed(KEY_F) then ToggleFullscreen;
 
       if IsKeyPressed(KEY_NINE) or IsKeyPressedRepeat(KEY_NINE) then
@@ -454,10 +456,17 @@ begin
       ClearBackground(BLANK);
 
       TargetRectangle := RectangleCreate(0, 0, GetScreenWidth, GetScreenHeight);
-      if Settings.Window.Aspect then
+      if not IsZero(Settings.Window.AspectRatio) then
       begin
-        TargetRectangle.Width := TargetRectangle.Height * 4/3;
-        TargetRectangle.x := (GetScreenWidth - TargetRectangle.width) * 0.5;
+        if (GetScreenHeight * Settings.Window.AspectRatio) < GetScreenWidth then
+        begin
+          TargetRectangle.Width := TargetRectangle.Height * Settings.Window.AspectRatio;
+          TargetRectangle.X := (GetScreenWidth - TargetRectangle.width) * 0.5;
+        end else
+        begin
+          TargetRectangle.Height := TargetRectangle.Width / Settings.Window.AspectRatio;
+          TargetRectangle.Y := (GetScreenHeight - TargetRectangle.height) * 0.5;
+        end;
       end;
 
       BeginShaderMode(Shader);
