@@ -4679,6 +4679,9 @@ begin
   Registers.IP := 0;
   Registers.CS := $FFFF;
 
+  FNmiPending := False;
+  FHardwareInterrupt.Pending := False;
+
   Registers.Flags.Reset;
 
   FTicks := 0;

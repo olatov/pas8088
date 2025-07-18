@@ -31,6 +31,7 @@ type
     property Timer: TPit8253 read FTimer;
     procedure Tick;
     procedure Run(ATicks: Integer=1000);
+    procedure Reset;
     procedure Initialize;
     procedure InstallCpu(ACpu: TCpu8088);
     procedure InstallMemoryBus(AMemoryBus: IMemoryBus);
@@ -74,6 +75,12 @@ var
   I: Integer;
 begin
   for I := 1 to ATicks do Tick;
+end;
+
+procedure TMachine.Reset;
+begin
+  Cpu.Reset;
+  Timer.Reset;
 end;
 
 procedure TMachine.Initialize;

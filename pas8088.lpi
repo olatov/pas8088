@@ -140,6 +140,11 @@
         <IsPartOfProject Value="True"/>
         <UnitName Value="Timer"/>
       </Unit>
+      <Unit>
+        <Filename Value="appsettings.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="AppSettings"/>
+      </Unit>
     </Units>
     <Debugger>
       <ClassConfig Version="1">

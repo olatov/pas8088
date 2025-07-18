@@ -14,12 +14,11 @@ uses
   Classes, SysUtils, StrUtils, Math, StreamEx, bufstream, Generics.Collections,
   RayLib, RayMath,
   Cpu8088, Memory, IO, Machine, VideoController, Interrupts, Hardware, Debugger,
-  Keyboard, Dump, Timer;
+  Keyboard, Dump, Timer, AppSettings;
+
 
 const
-  ClockSpeed = 250000;
   FPS = 50;
-  CyclesPerFrame = ClockSpeed div FPS;
 
   SpeakerSampleRate = 44100;
   SpeakerSamplesPerFrame = SpeakerSampleRate div FPS;
@@ -44,10 +43,10 @@ type
   end;
 
 var
-  BiosFile: String = 'poisk_1991.rom';
-  CartFile: String = 'basicc11.cart';
-  TapeFile: String = 'cassette.img';
-  BootstrapFile: String = '';
+  BiosRom: String = 'poisk_1991.rom';
+  CartRom: String = 'basicc11.cart';
+  CassetteImage: String = 'cassette.img';
+  BootstrapImage: String = '';
   DumpFile: String = '';
 
   Breakpoints: array of TPhysicalAddress = ($00000);
@@ -92,6 +91,7 @@ type
     procedure HandleLoadFromTape(ACpu: TCpu8088);
     procedure UpdateKeyboard(AKeyboard: TKeyboard);
     function BuildMachine: TMachine;
+    procedure ToggleFullscreen;
     function InterruptHook(ASender: TObject; ANumber: Byte): Boolean;
     procedure TimerOutputChange(ASender: TObject; AChannel: Integer; AValue: Boolean);
     function OnBeforeInstruction(ASender: TObject; AAddress: TPhysicalAddress
@@ -133,12 +133,12 @@ end;
 
 function TApp.BuildMachine: TMachine;
 var
-  BiosRom: TRomMemoryBlock;
-  BiosStream: TStream;
+  BiosRomBlock: TRomMemoryBlock;
+  BiosRomStream: TStream;
   Ram, VideoRam: TRamMemoryBlock;
   NmiTrigger: TNmiTrigger;
-  CartRom: TRomMemoryBlock;
-  TmpStream: TFileStream;
+  CartRomBlock: TRomMemoryBlock;
+  CartRomStream: TFileStream;
 begin
   Result := TMachine.Create(Nil);
 
@@ -149,22 +149,23 @@ begin
   Result.InstallIOBus(TIOBus.Create(Result));
 
   { Timer }
-  Result.InstallTimer(TPit8253.Create(Result, ClockSpeed));
+  Result.InstallTimer(TPit8253.Create(Result, Settings.Machine.ClockSpeed));
 
   { RAM / ROM }
   Result.InstallMemoryBus(TMemoryBus.Create(Result));
 
-  Ram := TRamMemoryBlock.Create(Result, 1024 * 96, RamAddress);
+  Ram := TRamMemoryBlock.Create(Result, 1024 * Settings.Machine.Ram, RamAddress);
   Result.InstallMemory(Ram);
 
-  BiosRom := TRomMemoryBlock.Create(Result, 1024 * 8, BiosAddress);
-  Result.InstallMemory(BiosRom);
+  BiosRomBlock := TRomMemoryBlock.Create(Result, 1024 * 8, BiosAddress);
+  Result.InstallMemory(BiosRomBlock);
 
   VideoRam := TRamMemoryBlock.Create(Result, 1024 * 32, VideoAddress);
   Result.InstallMemory(VideoRam);
 
   { Video }
-  Result.InstallVideo(TVideoController.Create(Result, CyclesPerFrame));
+  Result.InstallVideo(
+    TVideoController.Create(Result, Settings.Machine.ClockSpeed div FPS));
   NmiTrigger := TNmiTrigger.Create(Result);
   Result.Video.NmiTrigger := NmiTrigger;
   Result.Video.NmiTrigger.AttachCpu(Result.Cpu);
@@ -173,29 +174,49 @@ begin
   FKeyboard := TKeyboard.Create(Result);
   Result.IOBus.AttachDevice(FKeyboard);
 
-  if not CartFile.IsEmpty then
+  if not CartRom.IsEmpty then
   begin
-    CartRom := TRomMemoryBlock.Create(Result, 1024 * 64, $C0000);
-    Result.InstallMemory(CartRom);
-    TmpStream := TFileStream.Create(CartFile, fmOpenRead);
-    CartRom.LoadFromStream(TmpStream);
-    TmpStream.Free;
+    CartRomBlock := TRomMemoryBlock.Create(Result, 1024 * 64, $C0000);
+    Result.InstallMemory(CartRomBlock);
+    CartRomStream := TFileStream.Create(CartRom, fmOpenRead);
+    try
+      CartRomBlock.LoadFromStream(CartRomStream);
+    finally
+      FreeAndNil(CartRomStream);
+    end;
   end;
 
   Result.Initialize;
 
-  BiosStream := TFileStream.Create(BiosFile, fmOpenRead);
+  BiosRomStream := TFileStream.Create(BiosRom, fmOpenRead);
   try
-    BiosRom.LoadFromStream(BiosStream);
+    BiosRomBlock.LoadFromStream(BiosRomStream);
   finally
-    FreeAndNil(BiosStream);
+    FreeAndNil(BiosRomStream);
   end;
+end;
+
+procedure TApp.ToggleFullscreen;
+begin
+  Settings.Window.FullScreen := not Settings.Window.FullScreen;
+
+  if Settings.Window.FullScreen then
+  begin
+    ClearWindowState(FLAG_WINDOW_RESIZABLE);
+    HideCursor;
+  end else
+  begin
+    SetWindowState(FLAG_WINDOW_RESIZABLE);
+    ShowCursor;
+  end;
+
+  ToggleBorderlessWindowed;
 end;
 
 constructor TApp.Create;
 begin
   FDebugger := TDebugger.Create;
-  FLogWriter := TStreamWriter.Create('/tmp/comp.log', False, TEncoding.UTF8, 16384);
+  { FLogWriter := TStreamWriter.Create('/tmp/comp.log', False, TEncoding.UTF8, 16384); }
 
   if not DumpFile.IsEmpty then
   begin
@@ -204,8 +225,8 @@ begin
     TWriteBufStream(FDumpStream).SourceOwner := True;
   end;
 
-  if not TapeFile.IsEmpty then
-    FTapeStream := TFileStream.Create(TapeFile, fmOpenRead);
+  if not CassetteImage.IsEmpty and SysUtils.FileExists(CassetteImage) then
+    FTapeStream := TFileStream.Create(CassetteImage, fmOpenRead);
 
   FKeyboardMap := TKeyboardMap.Create;
   BuildKeyboardMap;
@@ -224,12 +245,14 @@ end;
 procedure TApp.Run;
 var
   Computer: TMachine;
-  ScanlineShader: TShader;
+  ScanlineShader, GrayscaleShader, Shader: TShader;
   LinesLoc, I, Underruns, CyclesPerSample: Integer;
-  Tmp: Single = 400.0;
+  LinesCount: Single = 400.0;
   Listing: array of TDebugger.TSourceLine;
   PrevTicks: QWord = 0;
   SpeakerStream: TAudioStream;
+  ScanlinesEnabled, GrayscaleEnabled, CyclesPerFrame: Integer;
+  TargetRectangle: TRectangle;
 
   procedure LoadBytesToDebugger(AMemoryBus: IMemoryBus; AAddress: TPhysicalAddress);
   var
@@ -250,14 +273,18 @@ var
 begin
   FDebug := DBG;
 
-  if ParamCount >= 1 then BootstrapFile := ParamStr(1);
+  if ParamCount >= 1 then BootstrapImage := ParamStr(1);
 
   InitAudioDevice;
 
-  SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-  InitWindow(800, 600, 'Poisk');
+  if not Settings.Window.FullScreen then
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+
+  InitWindow(640, 400, 'Poisk');
   SetTargetFPS(FPS);
   SetExitKey(KEY_NULL);
+
+  SetWindowSize(Settings.Window.Width, Settings.Window.Height);
 
   FFont := LoadFont(FontFile);
 
@@ -273,23 +300,84 @@ begin
   Computer.Cpu.OnBeforeExecution := @OnBeforeExecution;
   Computer.Timer.OnChannelOutputChange := @TimerOutputChange;
 
-  ScanlineShader := LoadShader(Nil, TextFormat('scanlines.fs'));
+  Shader := LoadShader(Nil, TextFormat('shader.fs'));
 
-  LinesLoc := GetShaderLocation(ScanlineShader, 'lines');
-  SetShaderValue(ScanlineShader, LinesLoc, @Tmp, SHADER_UNIFORM_FLOAT);
+  LinesLoc := GetShaderLocation(Shader, 'lines');
 
+  SetShaderValue(Shader, LinesLoc, @LinesCount, SHADER_UNIFORM_FLOAT);
 
   { Audio stream }
   SetAudioStreamBufferSizeDefault(SpeakerSamplesPerFrame);
   SpeakerStream := LoadAudioStream(SpeakerSampleRate, 8, 1);
   SetAudioStreamCallback(SpeakerStream, @AudioCallback);
+
+  SetMasterVolume(Settings.Audio.Volume);
+
   PlayAudioStream(SpeakerStream);
+  if Settings.Audio.Mute then PauseAudioStream(SpeakerStream);
 
   FKeybEnabled := True;
 
+  CyclesPerFrame := Settings.Machine.ClockSpeed div FPS;
+
+  if Settings.Window.FullScreen then
+  begin
+    I := 2;
+    while not IsWindowReady and (I > 0) do
+    begin
+      Sleep(100);
+      Dec(I);
+    end;
+
+    Sleep(200);
+    ToggleBorderlessWindowed;
+    HideCursor;
+  end;
+
   while not WindowShouldClose do
   begin
-    if IsKeyPressed(KEY_F12) then FStepByStep := True;
+    if IsKeyDown(KEY_F11) then
+    begin
+      if IsKeyPressed(KEY_ESCAPE) then Break;
+      if IsKeyPressed(KEY_F1) then Computer.Reset;
+
+      if IsKeyPressed(KEY_G) then Settings.Video.Grayscale := not Settings.Video.GrayScale;
+      if IsKeyPressed(KEY_S) then Settings.Video.ScanLines := not Settings.Video.ScanLines;
+      if IsKeyPressed(KEY_A) then Settings.Window.Aspect := not Settings.Window.Aspect;
+      if IsKeyPressed(KEY_F) then ToggleFullscreen;
+
+      if IsKeyPressed(KEY_NINE) or IsKeyPressedRepeat(KEY_NINE) then
+      begin
+        Settings.Audio.Volume := Settings.Audio.Volume - 0.02;
+        SetMasterVolume(Settings.Audio.Volume);
+      end;
+
+      if IsKeyPressed(KEY_ZERO) or IsKeyPressedRepeat(KEY_ZERO) then
+      begin
+        Settings.Audio.Volume := Settings.Audio.Volume + 0.02;
+        SetMasterVolume(Settings.Audio.Volume);
+      end;
+
+      if IsKeyPressed(KEY_M) then
+      begin
+        Settings.Audio.Mute := not Settings.Audio.Mute;
+        if Settings.Audio.Mute then
+          PauseAudioStream(SpeakerStream)
+        else
+          ResumeAudioStream(SpeakerStream);
+      end;
+    end;
+
+    GrayscaleEnabled := IfThen(Settings.Video.Grayscale, 1, 0);
+    ScanlinesEnabled := IfThen(Settings.Video.ScanLines, 1, 0);
+
+    SetShaderValue(Shader,
+      GetShaderLocation(Shader, 'enableGrayscale'),
+      @GrayscaleEnabled, SHADER_UNIFORM_INT);
+
+    SetShaderValue(Shader,
+      GetShaderLocation(Shader, 'enableScanlines'),
+      @ScanlinesEnabled, SHADER_UNIFORM_INT);
 
     Inc(FFrames);
 
@@ -300,16 +388,11 @@ begin
 
     PrevTicks := Computer.Cpu.Ticks;
 
-    //Writeln(Computer.Timer.Speaker.SampleCount);
     for I := 0 to Computer.Timer.Speaker.SampleCount - 1 do
       AudioBuffer.Write(Computer.Timer.Speaker.Samples[I]);
 
     Computer.Video.BeginFrame;
     Computer.Timer.Speaker.BeginAudioChunk;
-
-    Computer.Timer.Speaker.CaptureSample;
-    Computer.Timer.Speaker.CaptureSample;
-    Computer.Timer.Speaker.CaptureSample;
 
     CyclesPerSample := (CyclesPerFrame div SpeakerSamplesPerFrame);
 
@@ -318,28 +401,16 @@ begin
       begin
         for I := 0 to CyclesPerFrame - 1 do
         begin
-          //if Computer.Cpu.Ticks = Trunc(ClockSpeed * 2) then FKeyboard[KeyF2] := True;
-          //if Computer.Cpu.Ticks = Trunc(ClockSpeed * 2.2) then FKeyboard[KeyF2] := False;
-
-          Computer.Tick;
+            Computer.Tick;
           if FStepByStep then Break;
 
           if (Computer.Cpu.Ticks mod CyclesPerSample) = 0 then
             Computer.Timer.Speaker.CaptureSample;
         end;
-{
-        if (FFrames > 20) then
-        begin
-          if (Computer.Cpu.Ticks mod 5000) = 0 then
-            if not Odd(FFrames) then
-              Computer.Cpu.RaiseHardwareInterrupt($08)  { Todo: TIMER0 }
-            else
-            if FKeybEnabled then
-              Computer.Cpu.RaiseHardwareInterrupt($0E);  { Todo: TIMER1 }
-        end;
- }
+
       end else
       begin
+      {
         if IsKeyPressed(KEY_F7) or IsKeyPressedRepeat(KEY_F7) then
         begin
           Computer.Run(1); { Step into }
@@ -362,6 +433,7 @@ begin
         end;
 
         //Computer.Timer.Speaker.CaptureSample;
+        }
       end;
 
     except
@@ -380,39 +452,47 @@ begin
 
     BeginDrawing;
       ClearBackground(BLANK);
-      BeginShaderMode(ScanlineShader);
-        DrawTexturePro(
-          Target.texture,
-          RectangleCreate(0, 0, Target.texture.width, -Target.texture.height),
-          RectangleCreate(0, 0, GetScreenHeight * 1.333, GetScreenHeight),
-          { RectangleCreate(64, 64, GetScreenHeight * 1.333 * 0.85, GetScreenHeight * 0.85), }
-          Vector2Zero, 0, WHITE);
+
+      TargetRectangle := RectangleCreate(0, 0, GetScreenWidth, GetScreenHeight);
+      if Settings.Window.Aspect then
+      begin
+        TargetRectangle.Width := TargetRectangle.Height * 4/3;
+        TargetRectangle.x := (GetScreenWidth - TargetRectangle.width) * 0.5;
+      end;
+
+      BeginShaderMode(Shader);
+
+      DrawTexturePro(
+        Target.texture,
+        RectangleCreate(0, 0, Target.texture.width, -Target.texture.height),
+        TargetRectangle,
+        Vector2Zero, 0, WHITE);
+
       EndShaderMode;
-      DrawRectangleLinesEx(
-        RectangleCreate(0, 0, GetScreenHeight * 1.333, GetScreenHeight), 1,
-        ColorBrightness(DARKGRAY, -0.25));
 
       if FStepByStep then
         RenderDebugger(Computer.Cpu);
     EndDrawing;
-
-    //Writeln('Audio count: ', FAudioCount);
-    //Writeln(Computer.Timer.Speaker.SampleCount);
   end;
 
-  UnloadShader(ScanlineShader);
+  UnloadShader(Shader);
+
   UnloadRenderTexture(Target);
+
+  if not Settings.Window.FullScreen then
+  begin
+    Settings.Window.Width := GetScreenWidth;
+    Settings.Window.Height := GetScreenHeight;
+  end;
 
   CloseWindow;
 
   UnloadAudioStream(SpeakerStream);
   CloseAudioDevice;
 
-  //Writeln;
-  //Computer.Cpu.Registers.Log;
-  Writeln;
-
   FreeAndNil(Computer);
+
+  Settings.Save;
 end;
 
 procedure TApp.DumpMemory(AFileName: String;
@@ -438,10 +518,10 @@ var
   TestProgram: TMemoryStream;
 begin
   Result := False;
-  if BootstrapFile.IsEmpty then Exit;
+  if BootstrapImage.IsEmpty then Exit;
 
   TestProgram := TMemoryStream.Create;
-  TestProgram.LoadFromFile(BootstrapFile);
+  TestProgram.LoadFromFile(BootstrapImage);
   I := 0;
   while TestProgram.Position < TestProgram.Size do
   begin
@@ -841,19 +921,15 @@ procedure TApp.TimerOutputChange(ASender: TObject; AChannel: Integer;
   AValue: Boolean);
 begin
   {
-    Todo: Blocking h/w interrupts for first a little because
-    an interrupt running too early (before the IVT is initialized)
-    will break the execution. Review after i8259 is available.
+    Todo: Suppress h/w interrupts for a few secs during startup because
+    an interrupt firing too early (before the IVT is initialized)
+    can break the execution. Review after i8259 is available.
   }
-  if FFrames < FPS then Exit;
+  if FComputer.Cpu.Ticks < 700000 then Exit;
 
   case AChannel of
     0: if AValue then FComputer.Cpu.RaiseHardwareInterrupt($08);
     1: if AValue then FComputer.Cpu.RaiseHardwareInterrupt($0E);
-    2:
-      begin
-        if AValue then Inc(FAudioCount);
-      end;
   else;
   end;
 end;
@@ -948,6 +1024,9 @@ begin
   SetExceptionMask(GetExceptionMask + [exInvalidOp, exOverflow, exZeroDivide]);
 
   AudioBuffer := TRingBuffer.Create;
+
+  if not Settings.Machine.BiosRom.IsEmpty then
+    BiosRom := Settings.Machine.BiosRom;
 
   App := TApp.Create;
   App.Run;
