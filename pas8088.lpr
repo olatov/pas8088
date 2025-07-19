@@ -788,7 +788,11 @@ begin
     Add(keyLeftShift, [KEY_LEFT_SHIFT]);
     Add(keyRightShift, [KEY_RIGHT_SHIFT, KEY_KP_ADD]);
     Add(keyLeftControl, [KEY_LEFT_CONTROL]);
-    Add(keyRightControl, [KEY_RIGHT_CONTROL]);
+    {$ifdef DARWIN}
+      Add(keyRightControl, [KEY_RIGHT_SUPER]);
+    {$else}
+      Add(keyRightControl, [KEY_RIGHT_CONTROL]);
+    {$endif}
     Add(keyLeftAlt, [KEY_LEFT_ALT]);
     Add(keyRightAlt, [KEY_RIGHT_ALT]);
     Add(keyF1, [KEY_F1]);
