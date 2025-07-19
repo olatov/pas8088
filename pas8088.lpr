@@ -44,7 +44,7 @@ type
 
 var
   BiosRom: String = 'poisk_1991.rom';
-  CartRom: String = 'basicc11.cart';
+  CartRom: String = '';
   CassetteImage: String = '';
   BootstrapImage: String = '';
   DumpFile: String = '';
@@ -282,11 +282,13 @@ begin
 
   if ParamCount >= 1 then
     if LowerCase(ExtractFileExt(ParamStr(1))) = '.wav' then
+    begin
       if (SysUtils.FileExists(ParamStr(1))) then
       begin
         FTapeStream := TFileStream.Create(ParamStr(1), fmOpenRead);
         Writeln('Created tape stream for ', ParamStr(1));
       end
+    end
     else
       BootstrapImage := ParamStr(1);
 
