@@ -3077,7 +3077,7 @@ end;
 
 procedure TCpu8088.HandleLahf;
 begin
-  Registers.AH := Low(Registers.Flags.GetWord);
+  Registers.AH := Lo(Registers.Flags.GetWord);
 end;
 
 procedure TCpu8088.HandleMovALDisp16;
