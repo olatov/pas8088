@@ -3750,7 +3750,7 @@ end;
 
 procedure TCpu8088.AndRM16Reg16(AModRM: TModRM);
 var
-  Result: Byte;
+  Result: Word;
 begin
   Result := ReadRM16(AModRM) and Registers.GetByIndex16(AModRM.Reg);
   WriteRM16(AModRM, Result);
@@ -3768,7 +3768,7 @@ end;
 
 procedure TCpu8088.OrRM16Imm16(AModRM: TModRM; AImm: Word);
 var
-  Result: Byte;
+  Result: Word;
 begin
   Result := ReadRM16(AModRM) or AImm;
   WriteRM16(AModRM, Result);
