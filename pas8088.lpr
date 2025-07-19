@@ -11,8 +11,8 @@ uses
   {$IFDEF UNIX}
   cthreads,
   {$ENDIF}
-  Classes, SysUtils, StrUtils, Math, StreamEx, bufstream, Generics.Collections,
-  RayLib, RayMath,
+  Classes, SysUtils, StrUtils, Math, StreamEx, BufStream, Generics.Collections,
+  CustApp, RayLib, RayMath,
   Cpu8088, Memory, IO, Machine, VideoController, Interrupts, Hardware, Debugger,
   Keyboard, Dump, Timer, AppSettings, Cassette;
 
@@ -56,7 +56,7 @@ var
 type
   { TApp }
 
-  TApp = class
+  TApp = class(TCustomApplication)
   private
     procedure DumpMemory(AFileName: String; AMemoryBus: IMemoryBus;
       AAddress: TPhysicalAddress; ALength: Integer);
@@ -81,7 +81,7 @@ type
     FTapeStream: TStream;
     FComputer: TMachine;
     FAudioCount: Integer;
-    constructor Create;
+    constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
     procedure Run;
     procedure RenderDisplay(AVideo: TVideoController);
@@ -217,8 +217,10 @@ begin
   ToggleBorderlessWindowed;
 end;
 
-constructor TApp.Create;
+constructor TApp.Create(AOwner: TComponent);
 begin
+  inherited Create(AOwner);
+
   FDebugger := TDebugger.Create;
   { FLogWriter := TStreamWriter.Create('/tmp/comp.log', False, TEncoding.UTF8, 16384); }
 
@@ -228,9 +230,6 @@ begin
       TFileStream.Create(DumpFile, fmCreate));
     TWriteBufStream(FDumpStream).SourceOwner := True;
   end;
-
-  if not CassetteImage.IsEmpty and SysUtils.FileExists(CassetteImage) then
-    FTapeStream := TFileStream.Create(CassetteImage, fmOpenRead);
 
   FKeyboardMap := TKeyboardMap.Create;
   BuildKeyboardMap;
@@ -248,7 +247,7 @@ end;
 
 procedure TApp.Run;
 const
-  TapeFrequency = 22050;
+  TapeFrequency = 11025;
 var
   Computer: TMachine;
   ScanlineShader, GrayscaleShader, Shader: TShader;
@@ -281,7 +280,15 @@ var
 begin
   FDebug := DBG;
 
-  if ParamCount >= 1 then BootstrapImage := ParamStr(1);
+  if ParamCount >= 1 then
+    if LowerCase(ExtractFileExt(ParamStr(1))) = '.wav' then
+      if (SysUtils.FileExists(ParamStr(1))) then
+      begin
+        FTapeStream := TFileStream.Create(ParamStr(1), fmOpenRead);
+        Writeln('Created tape stream for ', ParamStr(1));
+      end
+    else
+      BootstrapImage := ParamStr(1);
 
   InitAudioDevice;
 
@@ -331,7 +338,7 @@ begin
   if Assigned(FTapeStream) then
     Computer.CassetteDrive.LoadTape(FTapeStream);
 
-  CyclesPerCassetteSample := Settings.Machine.ClockSpeed div TapeFrequency;
+  CyclesPerCassetteSample := Settings.Machine.ClockSpeed div TapeFrequency - 4;
   TapeDelta := CyclesPerCassetteSample / Settings.Machine.ClockSpeed;
 
   if Settings.Window.FullScreen then
@@ -356,6 +363,14 @@ begin
     begin
       if IsKeyPressed(KEY_ESCAPE) then Break;
       if IsKeyPressed(KEY_F1) then Computer.Reset;
+
+      if IsKeyPressed(KEY_F5) then
+        if Computer.CassetteDrive.State = csStopped then
+          Computer.CassetteDrive.Play
+        else
+          Computer.CassetteDrive.Stop;
+
+      if IsKeyPressed(KEY_F6) then Computer.CassetteDrive.Rewind;
 
       if IsKeyPressed(KEY_G) then Settings.Video.Grayscale := not Settings.Video.GrayScale;
       if IsKeyPressed(KEY_S) then Settings.Video.ScanLines := not Settings.Video.ScanLines;
@@ -420,7 +435,10 @@ begin
           if FStepByStep then Break;
 
           if (Computer.Cpu.Ticks mod CyclesPerSpeakerSample) = 0 then
-            Computer.Timer.Speaker.CaptureSample;
+            if (Computer.CassetteDrive.State = csPlaying) then
+              Computer.Timer.Speaker.CaptureSample(Computer.CassetteDrive.TapeIn)
+            else
+              Computer.Timer.Speaker.CaptureSample;
 
           if (Computer.CassetteDrive.State in [csPlaying, csRecording]) and
               ((Computer.Cpu.Ticks mod CyclesPerCassetteSample) = 0) then
@@ -937,8 +955,10 @@ begin
       case Cpu.Registers.AH of
         2:
           begin
-            if CassetteImage.IsEmpty then Exit(False);
-
+            FComputer.CassetteDrive.Play;
+            Result := False;
+          end
+          {
             if LowerCase(ExtractFileExt(CassetteImage)) = '.wav' then
             begin
               FComputer.CassetteDrive.Play;
@@ -949,6 +969,7 @@ begin
               Result := True;
             end;
           end;
+          }
       else;
       end;
 
@@ -1007,7 +1028,20 @@ procedure TApp.OnBeforeExecution(ASender: TObject; AInstruction: TInstruction);
 var
   Cpu: TCpu8088 absolute ASender;
   DumpFrame: Dump.TDumpFrame;
+  Data: Byte;
+  Crc: Word;
 begin
+  if (AInstruction.CS = $F000) and (AInstruction.IP = $F955) then
+  begin
+    Cpu.MemoryBus.InvokeRead(Nil, (Cpu.Registers.DS shl 4) + $AA, Data);
+    Crc := Data;
+    Cpu.MemoryBus.InvokeRead(Nil, (Cpu.Registers.DS shl 4) + $AB, Data);
+    Crc := Crc or (Data shl 4);
+
+    Writeln(Format('Read byte %.2x; CRC: %.4x',
+      [Cpu.Registers.AL, Crc]));
+  end;
+
   if not Assigned(FDumpStream) then Exit;
   //if AInstruction.CS = $F000 then Exit;
 
@@ -1061,7 +1095,7 @@ begin
   if not Settings.Machine.BiosRom.IsEmpty then
     BiosRom := Settings.Machine.BiosRom;
 
-  App := TApp.Create;
+  App := TApp.Create(Nil);
   App.Run;
   App.Free;
 
