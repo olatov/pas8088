@@ -14,7 +14,7 @@ uses
   Classes, SysUtils, StrUtils, Math, StreamEx, bufstream, Generics.Collections,
   RayLib, RayMath,
   Cpu8088, Memory, IO, Machine, VideoController, Interrupts, Hardware, Debugger,
-  Keyboard, Dump, Timer, AppSettings;
+  Keyboard, Dump, Timer, AppSettings, Cassette;
 
 
 const
@@ -45,7 +45,7 @@ type
 var
   BiosRom: String = 'poisk_1991.rom';
   CartRom: String = 'basicc11.cart';
-  CassetteImage: String = 'cassette.img';
+  CassetteImage: String = '';
   BootstrapImage: String = '';
   DumpFile: String = '';
 
@@ -88,7 +88,8 @@ type
     procedure RenderDebugger(ACpu: TCpu8088);
     procedure BuildKeyboardMap;
     function HandleBootstrap(const Cpu: TCpu8088): Boolean;
-    procedure HandleLoadFromTape(ACpu: TCpu8088);
+    procedure HandleLoadFromBinaryTape(ACpu: TCpu8088);
+    procedure HandleLoadFromWavTape;
     procedure UpdateKeyboard(AKeyboard: TKeyboard);
     function BuildMachine: TMachine;
     procedure ToggleFullscreen;
@@ -122,10 +123,9 @@ end;
 function TRingBuffer.Read(AFallback: Byte = 0): Byte;
 begin
   if ReadIndex = WriteIndex then
-  begin
-    //Writeln('Buffer Empty')
+    { Buffer is empty }
     Exit(AFallback);
-  end;
+
   Result := Data[ReadIndex];
   Inc(ReadIndex);
   if ReadIndex > High(Data) then ReadIndex := 0;
@@ -171,9 +171,12 @@ begin
   Result.Video.NmiTrigger := NmiTrigger;
   Result.Video.NmiTrigger.AttachCpu(Result.Cpu);
 
-  { FKeyboard }
+  { Keyboard }
   FKeyboard := TKeyboard.Create(Result);
   Result.IOBus.AttachDevice(FKeyboard);
+
+  { Cassette drive }
+  Result.CassetteDrive := TCassetteDrive.Create(Result);
 
   if not CartRom.IsEmpty then
   begin
@@ -244,16 +247,20 @@ begin
 end;
 
 procedure TApp.Run;
+const
+  TapeFrequency = 22050;
 var
   Computer: TMachine;
   ScanlineShader, GrayscaleShader, Shader: TShader;
-  LinesLoc, I, Underruns, CyclesPerSample: Integer;
+  LinesLoc, I, Underruns, CyclesPerSpeakerSample: Integer;
   LinesCount: Single = 400.0;
   Listing: array of TDebugger.TSourceLine;
   PrevTicks: QWord = 0;
   SpeakerStream: TAudioStream;
   ScanlinesEnabled, GrayscaleEnabled, CyclesPerFrame: Integer;
   TargetRectangle: TRectangle;
+  CyclesPerCassetteSample: Integer;
+  TapeDelta: Double;
 
   procedure LoadBytesToDebugger(AMemoryBus: IMemoryBus; AAddress: TPhysicalAddress);
   var
@@ -321,6 +328,12 @@ begin
 
   CyclesPerFrame := Settings.Machine.ClockSpeed div FPS;
 
+  if Assigned(FTapeStream) then
+    Computer.CassetteDrive.LoadTape(FTapeStream);
+
+  CyclesPerCassetteSample := Settings.Machine.ClockSpeed div TapeFrequency;
+  TapeDelta := CyclesPerCassetteSample / Settings.Machine.ClockSpeed;
+
   if Settings.Window.FullScreen then
   begin
     I := 2;
@@ -334,6 +347,8 @@ begin
     ToggleBorderlessWindowed;
     HideCursor;
   end;
+
+  CyclesPerSpeakerSample := (CyclesPerFrame div SpeakerSamplesPerFrame);
 
   while not WindowShouldClose do
   begin
@@ -396,8 +411,6 @@ begin
     Computer.Video.BeginFrame;
     Computer.Timer.Speaker.BeginAudioChunk;
 
-    CyclesPerSample := (CyclesPerFrame div SpeakerSamplesPerFrame);
-
     try
       if (not FStepByStep) or (Computer.Cpu.Registers.CS >= $F000) then
       begin
@@ -406,13 +419,18 @@ begin
             Computer.Tick;
           if FStepByStep then Break;
 
-          if (Computer.Cpu.Ticks mod CyclesPerSample) = 0 then
+          if (Computer.Cpu.Ticks mod CyclesPerSpeakerSample) = 0 then
             Computer.Timer.Speaker.CaptureSample;
-        end;
 
+          if (Computer.CassetteDrive.State in [csPlaying, csRecording]) and
+              ((Computer.Cpu.Ticks mod CyclesPerCassetteSample) = 0) then
+          begin
+            TapeDelta := CyclesPerCassetteSample / Settings.Machine.ClockSpeed;
+            Computer.CassetteDrive.Tick(TapeDelta);
+          end;
+        end;
       end else
       begin
-      {
         if IsKeyPressed(KEY_F7) or IsKeyPressedRepeat(KEY_F7) then
         begin
           Computer.Run(1); { Step into }
@@ -433,9 +451,6 @@ begin
           FStepByStep := False;
           Computer.Run(1);
         end;
-
-        //Computer.Timer.Speaker.CaptureSample;
-        }
       end;
 
     except
@@ -829,7 +844,7 @@ begin
   end;
 end;
 
-procedure TApp.HandleLoadFromTape(ACpu: TCpu8088);
+procedure TApp.HandleLoadFromBinaryTape(ACpu: TCpu8088);
 var
   Segment, Offset, BytesToRead: Word;
   Addr: TPhysicalAddress;
@@ -871,6 +886,11 @@ begin
   ACPu.Registers.Flags.CF := False;
 end;
 
+procedure TApp.HandleLoadFromWavTape;
+begin
+
+end;
+
 procedure TApp.UpdateKeyboard(AKeyboard: TKeyboard);
 var
   Item: specialize TPair<TKeyboard.TKey, specialize TArray<RayLib.TKeyboardKey>>;
@@ -887,6 +907,7 @@ end;
 function TApp.InterruptHook(ASender: TObject; ANumber: Byte): Boolean;
 var
   Cpu: TCpu8088 absolute ASender;
+  Silence: array[1..2000] of Byte;
 begin
   //Writeln(Format('INT %.x', [ANumber]));
 
@@ -916,8 +937,17 @@ begin
       case Cpu.Registers.AH of
         2:
           begin
-            HandleLoadFromTape(Cpu);
-            Result := True;
+            if CassetteImage.IsEmpty then Exit(False);
+
+            if LowerCase(ExtractFileExt(CassetteImage)) = '.wav' then
+            begin
+              FComputer.CassetteDrive.Play;
+              Result := False;
+            end else
+            begin
+              HandleLoadFromBinaryTape(Cpu);
+              Result := True;
+            end;
           end;
       else;
       end;
@@ -979,7 +1009,7 @@ var
   DumpFrame: Dump.TDumpFrame;
 begin
   if not Assigned(FDumpStream) then Exit;
-  if AInstruction.CS = $F000 then Exit;
+  //if AInstruction.CS = $F000 then Exit;
 
   DumpFrame := BuldDumpFrame(Cpu, (AInstruction.CS shl 4) + AInstruction.IP);
   DumpFrame.CS := AInstruction.CS;
@@ -1007,23 +1037,17 @@ end;
 
 procedure AudioCallback(buffer: Pointer; Frames: LongWord); cdecl;
 var
-  I, C: Integer;
+  I: Integer;
   OutBuf: PByte;
   Sample: Byte;
 begin
   OutBuf := PByte(Buffer);
   Sample := 0;
-{  Writeln(Format('RI: %d, WI: %d, Frames: %d', [
-    AudioBuffer.ReadIndex, AudioBuffer.WriteIndex, Frames
-  ]));
-}
-  C := Frames;
   for I := 0 to Frames - 1 do
   begin
     Sample := AudioBuffer.Read(127);
     OutBuf[I] := Sample;
   end;
-  //if C <> 0 then Writeln('Short ', C);
 end;
 
 var

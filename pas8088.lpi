@@ -145,6 +145,11 @@
         <IsPartOfProject Value="True"/>
         <UnitName Value="AppSettings"/>
       </Unit>
+      <Unit>
+        <Filename Value="cassette.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Cassette"/>
+      </Unit>
     </Units>
     <Debugger>
       <ClassConfig Version="1">
