@@ -6,7 +6,7 @@ interface
 
 uses
   Classes, SysUtils,
-  Cpu8088, VideoController, Hardware, Timer;
+  Cpu8088, VideoController, Hardware, Timer, Cassette;
 
 type
 
@@ -14,12 +14,14 @@ type
 
   TMachine = class(TComponent)
   private
+    FCassetteDrive: TCassetteDrive;
     FCpu: TCpu8088;
     FIOBus: IIOBus;
     FMemoryBus: IMemoryBus;
     FVideo: TVideoController;
     FTimer: TPit8253;
     FMemory: specialize TArray<IMemoryBusDevice>;
+    procedure SetCassetteDrive(AValue: TCassetteDrive);
     procedure SetCpu(AValue: TCpu8088);
     procedure SetIOBus(AValue: IIOBus);
     procedure SetMemoryBus(AValue: IMemoryBus);
@@ -29,6 +31,7 @@ type
     property IOBus: IIOBus read FIOBus write SetIOBus;
     property Video: TVideoController read FVideo;
     property Timer: TPit8253 read FTimer;
+    property CassetteDrive: TCassetteDrive read FCassetteDrive write SetCassetteDrive;
     procedure Tick;
     procedure Run(ATicks: Integer=1000);
     procedure Reset;
@@ -49,6 +52,12 @@ procedure TMachine.SetCpu(AValue: TCpu8088);
 begin
   if FCpu = AValue then Exit;
   FCpu := AValue;
+end;
+
+procedure TMachine.SetCassetteDrive(AValue: TCassetteDrive);
+begin
+  if FCassetteDrive = AValue then Exit;
+  FCassetteDrive := AValue;
 end;
 
 procedure TMachine.SetIOBus(AValue: IIOBus);
@@ -119,6 +128,9 @@ begin
     IOBus.AttachDevice(FTimer);
   end;
 
+  if Assigned(FCassetteDrive) then
+    IOBus.AttachDevice(FCassetteDrive);
+
   for MemoryBlock in FMemory do
     MemoryBus.AttachDevice(MemoryBlock);
 
@@ -132,7 +144,7 @@ end;
 
 procedure TMachine.InstallMemoryBus(AMemoryBus: IMemoryBus);
 begin
-  MemoryBus := AMemoryBus;;
+  MemoryBus := AMemoryBus;
 end;
 
 procedure TMachine.InstallIOBus(AIOBus: IIOBus);
