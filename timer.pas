@@ -103,6 +103,7 @@ type
         procedure BeginAudioChunk;
         procedure Tick;
         procedure CaptureSample;
+        procedure CaptureSample(ASample: Boolean);
       end;
   private
     FIOBus: IIOBus;
@@ -197,7 +198,7 @@ var
   I: Integer;
 begin
   inherited Create(AOwner);
-  FTickBatchSize := BaseFrequency div AActualFrequency;
+  FTickBatchSize := Round(BaseFrequency / AActualFrequency);
 
   for I := 0 to High(FChannels) do
     FChannels[I] := TChannel.Create(Self);
@@ -574,9 +575,14 @@ end;
 
 procedure TPit8253.TSpeaker.CaptureSample;
 begin
+  CaptureSample(Output);
+end;
+
+procedure TPit8253.TSpeaker.CaptureSample(ASample: Boolean);
+begin
   if SampleCount >= Length(Samples) then Exit;
 
-  Samples[SampleCount] := IfThen(Output, 0, 255);
+  Samples[SampleCount] := IfThen(ASample, 0, 255);
   Inc(SampleCount);
 end;
 
