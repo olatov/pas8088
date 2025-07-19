@@ -2637,7 +2637,7 @@ begin
   Registers.Flags.AF := Registers.Flags.AF or ((Registers.AL and $0F) > 9);
   if Registers.Flags.AF then
   begin
-    Registers.AX := Registers.AX - 6;
+    Registers.AL := Registers.AL - 6;
     Registers.AH := Registers.AH - 1;
   end;
 
