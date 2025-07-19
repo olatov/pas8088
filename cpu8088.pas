@@ -1759,8 +1759,6 @@ end;
 
 procedure TCpu8088.WriteMemoryByte(ASegment, AOffset: Word; AData: Byte);
 begin
-  if (AData = 45) then
-    AData := 45;
   WriteMemoryByte((ASegment shl 4) + AOffset, AData);
 end;
 
@@ -3079,7 +3077,7 @@ end;
 
 procedure TCpu8088.HandleLahf;
 begin
-  Registers.AH := Byte(Registers.Flags.GetWord);
+  Registers.AH := Low(Registers.Flags.GetWord);
 end;
 
 procedure TCpu8088.HandleMovALDisp16;
@@ -4334,7 +4332,7 @@ begin
   Result := (Old shr 1) or (OldCF shl 15);
   WriteRM16(AModRM, Result);
 
-  Registers.Flags.CF := (Result and 1) <> 0;
+  Registers.Flags.CF := (Old and 1) <> 0;
   Registers.Flags.OF_ := ((Old xor CFMask[Registers.Flags.CF]) and $8000) = 0;
 end;
 
