@@ -103,7 +103,7 @@ type
         procedure BeginAudioChunk;
         procedure Tick;
         procedure CaptureSample;
-        procedure CaptureSample(ASample: Boolean);
+        procedure CaptureSample(ASample: Boolean; AVolume: Double = 1);
       end;
   private
     FIOBus: IIOBus;
@@ -578,11 +578,11 @@ begin
   CaptureSample(Output);
 end;
 
-procedure TPit8253.TSpeaker.CaptureSample(ASample: Boolean);
+procedure TPit8253.TSpeaker.CaptureSample(ASample: Boolean; AVolume: Double = 1);
 begin
   if SampleCount >= Length(Samples) then Exit;
 
-  Samples[SampleCount] := IfThen(ASample, 0, 255);
+  Samples[SampleCount] := 127 + Trunc(IfThen(ASample, 127, -127) * AVolume);
   Inc(SampleCount);
 end;
 
