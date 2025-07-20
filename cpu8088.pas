@@ -66,8 +66,8 @@ type
     procedure UpdateAfterAnd16(AResult: Word);
     procedure UpdateAfterOr8(AResult: Byte);
     procedure UpdateAfterOr16(AResult: Word);
-    procedure UpdateAfterNeg8(AResult: Byte);
-    procedure UpdateAfterNeg16(AResult: Word);
+    procedure UpdateAfterNeg8(AOld, AResult: Byte);
+    procedure UpdateAfterNeg16(AOld, AResult: Word);
     procedure UpdateAfterXor8(AResult: Byte);
     procedure UpdateAfterXor16(AResult: Word);
     procedure UpdateAfterDec8(AOld: Byte; AResult: Int16);
@@ -920,21 +920,21 @@ begin
   AF := False; { for debug }
 end;
 
-procedure TFlagRegister.UpdateAfterNeg8(AResult: Byte);
+procedure TFlagRegister.UpdateAfterNeg8(AOld, AResult: Byte);
 begin
   CF := AResult <> 0;
-  OF_ := not InRange(AResult, Int8.MinValue, Int8.MaxValue);
-  AF := (AResult and $10) <> 0;  { TODO }
+  OF_ := AOld = $80;
+  AF := (AOld and $0F) <> 0;
   UpdateZF8(AResult);
   UpdateSF8(AResult);
   UpdatePF8(AResult);
 end;
 
-procedure TFlagRegister.UpdateAfterNeg16(AResult: Word);
+procedure TFlagRegister.UpdateAfterNeg16(AOld, AResult: Word);
 begin
   CF := AResult <> 0;
-  OF_ := not InRange(AResult, Int16.MinValue, Int16.MaxValue);
-  AF := (AResult and $1000) <> 0;  { TODO }
+  OF_ :=AOld = $8000;
+  AF := (AOld and $000F) <> 0;
   UpdateZF16(AResult);
   UpdateSF16(AResult);
   UpdatePF16(AResult);
@@ -1537,7 +1537,6 @@ end;
 
 procedure TCpu8088.RaiseHardwareInterrupt(ANumber: Byte);
 begin
-  if not Registers.Flags.IF_ then Exit;
   FHardwareInterrupt.Pending := True;
   FHardwareInterrupt.Number := ANumber;
 end;
@@ -4011,13 +4010,13 @@ end;
 
 procedure TCpu8088.NegRM8(AModRM: TModRM);
 var
-  Data: Byte;
+  Old: Byte;
   Result: Int8;
 begin
-  Data := ReadRM8(AModRM);
-  Result := Int8(-Data);
+  Old := ReadRM8(AModRM);
+  Result := Int8(-Old);
   WriteRM8(AModRM, Result);
-  Registers.Flags.UpdateAfterNeg8(Result);
+  Registers.Flags.UpdateAfterNeg8(Old, Result);
 end;
 
 procedure TCpu8088.NegRM16(AModRM: TModRM);
@@ -4028,7 +4027,7 @@ begin
   Old := ReadRM16(AModRM);
   Result := Int16(-Old);
   WriteRM16(AModRM, Result);
-  Registers.Flags.UpdateAfterNeg16(Result);
+  Registers.Flags.UpdateAfterNeg16(Old, Result);
 end;
 
 procedure TCpu8088.ShlRM8Const1(AModRM: TModRM);
