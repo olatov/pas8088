@@ -18,10 +18,15 @@ type
     FTapeStream: TStream;
     FWavReader: TWavReader;
     FTapeIn, FTapeOut: Boolean;
+    function GetLength: Double;
+    function GetPosition: Double;
+    procedure SetPosition(AValue: Double);
   public
     State: (csStopped, csPlaying, csRecording);
     property TapeOut: Boolean read FTapeOut;
     property TapeIn: Boolean read FTapeIn;
+    property Position: Double read GetPosition write SetPosition;
+    property Length: Double read GetLength;
     constructor Create(AOwner: TComponent); reintroduce;
     destructor Destroy; override;
     procedure CreateTape;
@@ -50,6 +55,7 @@ implementation
 procedure TCassetteDrive.LoadTape(ATapeStream: TStream);
 begin
   FTapeStream := ATapeStream;
+  FTapeStream.Seek(0, soBeginning);
   FWavReader.LoadFromStream(FTapeStream);
 end;
 
@@ -105,6 +111,45 @@ begin
           FTapeIn := Buffer[(ActualCount div 2) + 1] > 127;
       end;
   end;
+end;
+
+function TCassetteDrive.GetPosition: Double;
+var
+  Fmt: TWaveFormat;
+begin
+  if not Assigned(FTapeStream) then Exit(0);
+  Fmt := FWavReader.Fmt;
+  Result := FTapeStream.Position
+    / (Fmt.SampleRate * Fmt.Channels * Fmt.BitsPerSample / 8);
+end;
+
+procedure TCassetteDrive.SetPosition(AValue: Double);
+var
+  Fmt: TWaveFormat;
+  OneSec: UInt32;
+  Buffer: array[1..(512 * 1024)] of Byte;
+  I: Integer;
+begin
+  Fmt := FWavReader.Fmt;
+  OneSec := Fmt.SampleRate * Fmt.Channels * Fmt.BitsPerSample div 8;
+
+  FTapeStream.Seek(0, soBeginning);
+  FWavReader.Free;
+  FWavReader := TWavReader.Create;
+  FWavReader.LoadFromStream(FTapeStream);
+
+  for I := 1 to Trunc(AValue) do
+    FWavReader.ReadBuf(Buffer[1], OneSec);
+end;
+
+function TCassetteDrive.GetLength: Double;
+var
+  Fmt: TWaveFormat;
+begin
+  if not Assigned(FTapeStream) then Exit(0);
+  Fmt := FWavReader.Fmt;
+  Result := FTapeStream.Size
+    / (Fmt.SampleRate * Fmt.Channels * Fmt.BitsPerSample / 8);
 end;
 
 constructor TCassetteDrive.Create(AOwner: TComponent);

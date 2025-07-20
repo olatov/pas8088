@@ -239,12 +239,14 @@ type
     end;
     FNmiPending: Boolean;
     FCurrentInstruction: TInstruction;
+    FWaitStates: Integer;
 
     function CodeSegment: Word;
     function GetCurrentAddress: TPhysicalAddress;
     procedure SetInterruptHook(AValue: TInteruptHook);
     procedure SetOnAfterInstruction(AValue: TInstructionNotifyEvent);
     procedure SetOnBeforeInstruction(AValue: TInstructionHook);
+    procedure SetWaitStates(AValue: Integer);
     function StackSegment: Word;
     function DataSegment: Word;
     function ExtraSegment: Word;
@@ -536,6 +538,7 @@ type
   public
     function DumpCurrentInstruction: String;
     property Ticks: QWord read FTicks;
+    property WaitStates: Integer read FWaitStates write SetWaitStates;
     property Halted: Boolean read FHalted;
     property Registers: TRegisters read FRegisters write FRegisters;
     property OnBeforeInstruction: TInstructionHook read FOnBeforeInstruction write SetOnBeforeInstruction;
@@ -1491,6 +1494,12 @@ procedure TCpu8088.SetOnBeforeInstruction(AValue: TInstructionHook);
 begin
   if FOnBeforeInstruction = AValue then Exit;
   FOnBeforeInstruction := AValue;
+end;
+
+procedure TCpu8088.SetWaitStates(AValue: Integer);
+begin
+  if FWaitStates = AValue then Exit;
+  FWaitStates := AValue;
 end;
 
 function TCpu8088.StackSegment: Word;
@@ -4689,6 +4698,9 @@ end;
 procedure TCpu8088.Tick;
 begin
   Inc(FTicks);
+  Dec(FWaitStates);
+
+  if (WaitStates > 0) then Exit;
 
   if FNmiPending then
   begin

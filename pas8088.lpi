@@ -38,9 +38,6 @@
               <StackChecks Value="True"/>
             </Checks>
             <VerifyObjMethodCallValidity Value="True"/>
-            <Optimizations>
-              <OptimizationLevel Value="0"/>
-            </Optimizations>
           </CodeGeneration>
           <Linking>
             <Debugging>
@@ -149,6 +146,10 @@
         <Filename Value="cassette.pas"/>
         <IsPartOfProject Value="True"/>
         <UnitName Value="Cassette"/>
+      </Unit>
+      <Unit>
+        <Filename Value="Readme.txt"/>
+        <IsPartOfProject Value="True"/>
       </Unit>
     </Units>
     <Debugger>

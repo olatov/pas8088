@@ -73,6 +73,7 @@ type
     FDebug: Boolean;
     FStepBreakpoint: TPhysicalAddress;
     FFrames: UInt64;
+    FWorkingFileName: String;
     FNmiCounter: Integer;
     FStepByStep: Boolean;
     FKeybEnabled: Boolean;
@@ -81,6 +82,11 @@ type
     FTapeStream: TStream;
     FComputer: TMachine;
     FAudioCount: Integer;
+    FOsdText: record
+      Text: String;
+      Color: TColorB;
+      Lifetime: Integer; { In frames }
+    end;
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
     procedure Run;
@@ -93,6 +99,8 @@ type
     procedure UpdateKeyboard(AKeyboard: TKeyboard);
     function BuildMachine: TMachine;
     procedure ToggleFullscreen;
+    procedure PrintOsd(AText: String; AColor: TColorB);
+    procedure PrintOsd(AText: String);
     function InterruptHook(ASender: TObject; ANumber: Byte): Boolean;
     procedure TimerOutputChange(ASender: TObject; AChannel: Integer; AValue: Boolean);
     function OnBeforeInstruction(ASender: TObject; AAddress: TPhysicalAddress
@@ -207,14 +215,26 @@ begin
   if Settings.Window.FullScreen then
   begin
     ClearWindowState(FLAG_WINDOW_RESIZABLE);
-    HideCursor;
+    //HideCursor;
   end else
   begin
     SetWindowState(FLAG_WINDOW_RESIZABLE);
-    ShowCursor;
+    //ShowCursor;
   end;
 
   ToggleBorderlessWindowed;
+end;
+
+procedure TApp.PrintOsd(AText: String; AColor: TColorB);
+begin
+  FOsdText.Text := AText;
+  FOsdText.Color := Fade(AColor, 0.5);
+  FOsdText.Lifetime := FPS * 3;
+end;
+
+procedure TApp.PrintOsd(AText: String);
+begin
+  PrintOsd(AText, YELLOW);
 end;
 
 constructor TApp.Create(AOwner: TComponent);
@@ -260,6 +280,7 @@ var
   TargetRectangle: TRectangle;
   CyclesPerCassetteSample: Integer;
   TapeDelta: Double;
+  WaitStates, InitialWaitStates: Integer;
 
   procedure LoadBytesToDebugger(AMemoryBus: IMemoryBus; AAddress: TPhysicalAddress);
   var
@@ -277,27 +298,53 @@ var
     FDebugger.LoadBytes(Code, AAddress - 8, AAddress);
   end;
 
+  function TapePositionAsText: String;
+  begin
+    Result := Format(
+      '%d:%.2d / %d:%.2d',
+      [
+        Trunc(Computer.CassetteDrive.Position) div 60,
+        Trunc(Computer.CassetteDrive.Position) mod 60,
+        Trunc(Computer.CassetteDrive.Length) div 60,
+        Trunc(Computer.CassetteDrive.Length) mod 60
+      ]);
+  end;
+
 begin
   FDebug := DBG;
 
   if ParamCount >= 1 then
     if LowerCase(ExtractFileExt(ParamStr(1))) = '.wav' then
     begin
-      if (SysUtils.FileExists(ParamStr(1))) then
-      begin
+      try
         FTapeStream := TFileStream.Create(ParamStr(1), fmOpenRead);
-        Writeln('Created tape stream for ', ParamStr(1));
-      end
+        FWorkingFileName := ParamStr(1);
+        PrintOsd('[Tape] ' + FWorkingFileName);
+      except
+        on E: Exception do
+        begin
+          PrintOsd('[Tape] ' + E.Message);
+          FWorkingFileName := String.Empty;
+          FreeAndNil(FTapeStream);
+        end;
+      end;
     end
-    else
+    else begin
       BootstrapImage := ParamStr(1);
+      FWorkingFileName := BootstrapImage;
+    end;
 
   InitAudioDevice;
 
   if not Settings.Window.FullScreen then
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
 
-  InitWindow(640, 400, 'Poisk');
+  {$ifndef darwin}
+    SetConfigFlags(FLAG_WINDOW_HIGHDPI);
+  {$EndIf}
+
+  Title := 'Poisk';
+  InitWindow(640, 400, PChar(Title));
   SetTargetFPS(FPS);
   SetExitKey(KEY_NULL);
 
@@ -323,6 +370,15 @@ begin
 
   SetShaderValue(Shader, LinesLoc, @LinesCount, SHADER_UNIFORM_FLOAT);
 
+  if not FWorkingFileName.IsEmpty then
+  begin
+    Title := Title + ' - ' + FWorkingFileName;
+    if Assigned(FTapeStream) then
+      Title := Title + Format(' [%s]', [TapePositionAsText]);
+  end;
+
+  SetWindowTitle(PChar(Title));
+
   { Audio stream }
   SetAudioStreamBufferSizeDefault(SpeakerSamplesPerFrame);
   SpeakerStream := LoadAudioStream(SpeakerSampleRate, 8, 1);
@@ -343,24 +399,25 @@ begin
   CyclesPerCassetteSample := Settings.Machine.ClockSpeed div TapeFrequency - 4;
   TapeDelta := CyclesPerCassetteSample / Settings.Machine.ClockSpeed;
 
+  HideCursor;
+
   if Settings.Window.FullScreen then
   begin
-    I := 2;
-    while not IsWindowReady and (I > 0) do
-    begin
-      Sleep(100);
-      Dec(I);
-    end;
-
     Sleep(200);
     ToggleBorderlessWindowed;
-    HideCursor;
   end;
 
   CyclesPerSpeakerSample := (CyclesPerFrame div SpeakerSamplesPerFrame);
 
+  DivMod(
+    Settings.Machine.ClockSpeed, Settings.Machine.CpuSpeed,
+    WaitStates, InitialWaitStates);
+  InitialWaitStates := InitialWaitStates div FPS;
+
   while not WindowShouldClose do
   begin
+    FOsdText.Lifetime := Max(0, FOsdText.Lifetime - 1);
+
     if IsKeyDown(KEY_F11) then
     begin
       if IsKeyPressed(KEY_ESCAPE) then Break;
@@ -372,7 +429,20 @@ begin
         else
           Computer.CassetteDrive.Stop;
 
-      if IsKeyPressed(KEY_F6) then Computer.CassetteDrive.Rewind;
+      if (IsKeyPressed(KEY_F6) or IsKeyPressedRepeat(KEY_F6)) then
+      begin
+        Computer.CassetteDrive.Position := Computer.CassetteDrive.Position - 10;
+        PrintOsd('Tape: ' + TapePositionAsText);
+      end;
+
+      if (IsKeyPressed(KEY_F7) or IsKeyPressedRepeat(KEY_F7)) then
+      begin
+        Computer.CassetteDrive.Position := Computer.CassetteDrive.Position + 10;
+        PrintOsd('Tape: ' + TapePositionAsText);
+      end;
+
+      if IsKeyPressed(KEY_F8) then
+        PrintOsd('Tape: ' + TapePositionAsText);
 
       if IsKeyPressed(KEY_G) then Settings.Video.Grayscale := not Settings.Video.GrayScale;
       if IsKeyPressed(KEY_S) then Settings.Video.ScanLines := not Settings.Video.ScanLines;
@@ -382,14 +452,16 @@ begin
 
       if IsKeyPressed(KEY_NINE) or IsKeyPressedRepeat(KEY_NINE) then
       begin
-        Settings.Audio.Volume := Settings.Audio.Volume - 0.02;
+        Settings.Audio.Volume := Settings.Audio.Volume - 0.05;
         SetMasterVolume(Settings.Audio.Volume);
+        PrintOsd(Format('Vol: %d', [Round(Settings.Audio.Volume * 100)]));
       end;
 
       if IsKeyPressed(KEY_ZERO) or IsKeyPressedRepeat(KEY_ZERO) then
       begin
-        Settings.Audio.Volume := Settings.Audio.Volume + 0.02;
+        Settings.Audio.Volume := Settings.Audio.Volume + 0.05;
         SetMasterVolume(Settings.Audio.Volume);
+        PrintOsd(Format('Vol: %d', [Round(Settings.Audio.Volume * 100)]));
       end;
 
       if IsKeyPressed(KEY_M) then
@@ -428,17 +500,28 @@ begin
     Computer.Video.BeginFrame;
     Computer.Timer.Speaker.BeginAudioChunk;
 
+    if Computer.CassetteDrive.State in [csPlaying, csRecording] then
+      SetWindowTitle(PChar(
+        Format('Poisk - %s [%s]',
+        [
+          FWorkingFileName,
+          TapePositionAsText
+        ])));
     try
       if (not FStepByStep) or (Computer.Cpu.Registers.CS >= $F000) then
       begin
+        Computer.Cpu.WaitStates := InitialWaitStates;
         for I := 0 to CyclesPerFrame - 1 do
         begin
-            Computer.Tick;
+          Computer.Tick;
+          if Computer.Cpu.WaitStates <= 0 then Computer.Cpu.WaitStates := WaitStates;
+
           if FStepByStep then Break;
 
           if (Computer.Cpu.Ticks mod CyclesPerSpeakerSample) = 0 then
             if (Computer.CassetteDrive.State = csPlaying) then
-              Computer.Timer.Speaker.CaptureSample(Computer.CassetteDrive.TapeIn)
+              Computer.Timer.Speaker.CaptureSample(
+                Computer.CassetteDrive.TapeIn, 0.5)
             else
               Computer.Timer.Speaker.CaptureSample;
 
@@ -490,19 +573,24 @@ begin
     BeginDrawing;
       ClearBackground(BLANK);
 
-      TargetRectangle := RectangleCreate(0, 0, GetScreenWidth, GetScreenHeight);
+      TargetRectangle := RectangleCreate(0, 0, GetRenderWidth, GetRenderHeight);
       if not IsZero(Settings.Window.AspectRatio) then
       begin
-        if (GetScreenHeight * Settings.Window.AspectRatio) < GetScreenWidth then
+        if (GetRenderHeight * Settings.Window.AspectRatio) < GetRenderWidth then
         begin
           TargetRectangle.Width := TargetRectangle.Height * Settings.Window.AspectRatio;
-          TargetRectangle.X := (GetScreenWidth - TargetRectangle.width) * 0.5;
+          TargetRectangle.X := (GetRenderWidth - TargetRectangle.width) * 0.5;
         end else
         begin
           TargetRectangle.Height := TargetRectangle.Width / Settings.Window.AspectRatio;
-          TargetRectangle.Y := (GetScreenHeight - TargetRectangle.height) * 0.5;
+          TargetRectangle.Y := (GetRenderHeight - TargetRectangle.height) * 0.5;
         end;
       end;
+
+      TargetRectangle.width := TargetRectangle.width / GetWindowScaleDPI.x;
+      TargetRectangle.height := TargetRectangle.height / GetWindowScaleDPI.y;
+      TargetRectangle.x := TargetRectangle.x / GetWindowScaleDPI.x;
+      TargetRectangle.y := TargetRectangle.y / GetWindowScaleDPI.y;
 
       BeginShaderMode(Shader);
 
@@ -513,6 +601,15 @@ begin
         Vector2Zero, 0, WHITE);
 
       EndShaderMode;
+
+      if (FOsdText.Lifetime > 0) then
+      begin
+        DrawRectangle(0, 0, 640, 56, ColorAlpha(BLACK, Min(FOsdText.Lifetime / FPS, 0.8)));
+        DrawTextEx(FFont,
+          PChar(FOsdText.Text),
+          Vector2Create(0, 0), 48, 0,
+          ColorAlpha(FOsdText.Color, Min(FOsdText.Lifetime / FPS, 1)));
+      end;
 
       if FStepByStep then
         RenderDebugger(Computer.Cpu);
@@ -525,8 +622,8 @@ begin
 
   if not Settings.Window.FullScreen then
   begin
-    Settings.Window.Width := GetScreenWidth;
-    Settings.Window.Height := GetScreenHeight;
+    Settings.Window.Width := GetRenderWidth;
+    Settings.Window.Height := GetRenderHeight;
   end;
 
   CloseWindow;
@@ -620,7 +717,7 @@ const
   CodeFontSize = 48;
   VertSpacing = 1;
 begin
-  Left := GetScreenWidth - 360;
+  Left := GetRenderWidth - 360;
   Color := ColorAlpha(YELLOW, 0.9);
 
   DrawTextEx(
@@ -927,7 +1024,6 @@ end;
 function TApp.InterruptHook(ASender: TObject; ANumber: Byte): Boolean;
 var
   Cpu: TCpu8088 absolute ASender;
-  Silence: array[1..2000] of Byte;
 begin
   //Writeln(Format('INT %.x', [ANumber]));
 
@@ -975,7 +1071,13 @@ begin
       else;
       end;
 
-    $19: Result := HandleBootstrap(Cpu);
+    $19:
+      try
+        Result := HandleBootstrap(Cpu);
+      except
+        on E: Exception do
+          PrintOsd('[BIN] ' + E.Message);
+      end;
   end;
 end;
 
@@ -983,11 +1085,11 @@ procedure TApp.TimerOutputChange(ASender: TObject; AChannel: Integer;
   AValue: Boolean);
 begin
   {
-    Todo: Suppress h/w interrupts for a few secs during startup because
-    an interrupt firing too early (before the IVT is initialized)
+    Todo: Suppress h/w interrupts for a few secs during a warm reset
+    because an interrupt firing too early (before the IVT is initialized)
     can break the execution. Review after i8259 is available.
   }
-  if FComputer.Cpu.Ticks < 700000 then Exit;
+  if (FComputer.Cpu.Ticks < 1000000) and (FFrames > 50) then Exit;
 
   case AChannel of
     0: if AValue then FComputer.Cpu.RaiseHardwareInterrupt($08);
@@ -1033,17 +1135,6 @@ var
   Data: Byte;
   Crc: Word;
 begin
-  if (AInstruction.CS = $F000) and (AInstruction.IP = $F955) then
-  begin
-    Cpu.MemoryBus.InvokeRead(Nil, (Cpu.Registers.DS shl 4) + $AA, Data);
-    Crc := Data;
-    Cpu.MemoryBus.InvokeRead(Nil, (Cpu.Registers.DS shl 4) + $AB, Data);
-    Crc := Crc or (Data shl 4);
-
-    Writeln(Format('Read byte %.2x; CRC: %.4x',
-      [Cpu.Registers.AL, Crc]));
-  end;
-
   if not Assigned(FDumpStream) then Exit;
   //if AInstruction.CS = $F000 then Exit;
 

@@ -35,6 +35,7 @@ type
 
     Machine: record
       ClockSpeed: Integer;
+      CpuSpeed: Integer;
       Ram: Integer;
       BiosRom: String;
     end;
@@ -90,7 +91,8 @@ var
 begin
   Config := TIniFile.Create(AFileName);
   try
-    Machine.ClockSpeed := Config.ReadInteger('Machine', 'ClockSpeed', 250000);
+    Machine.ClockSpeed := Config.ReadInteger('Machine', 'ClockSpeed', 675000);
+    Machine.CpuSpeed := Config.ReadInteger('Machine', 'CpuSpeed', 275000);
     Machine.Ram := EnsureRange(
       Config.ReadInteger('Machine', 'Ram', 640), 128, 640);
     Machine.BiosRom := 'poisk_1991.rom';
