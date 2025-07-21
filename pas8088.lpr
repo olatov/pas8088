@@ -45,26 +45,21 @@ type
   end;
 
 var
-  BiosRom: String = 'poisk_1991.rom';
-  CartRom: String = '';
-  CassetteImage: String = '';
-  BootstrapImage: String = '';
-  DumpFile: String = '/tmp/ptica.dump';
-
+  AudioBuffer: TRingBuffer;
   Breakpoints: array of TPhysicalAddress = ($00000);
 
-  AudioBuffer: TRingBuffer;
-
 type
-  { TApp }
+  { TApplication }
 
-  TApp = class(TCustomApplication)
+  TApplication = class(TCustomApplication)
   private
+    DumpFile: String;
     FFont: TFont;
     FGfxShader: TShader;
     FSpeakerStream: TAudioStream;
     procedure DumpMemory(AFileName: String; AMemoryBus: IMemoryBus;
       AAddress: TPhysicalAddress; ALength: Integer);
+    procedure HandleCommandLine;
     procedure HandleReadFromTape;
     procedure HandleWriteToTape;
     function LoadFontFromResource(const AResourceName: String;
@@ -88,7 +83,7 @@ type
     FKeybEnabled: Boolean;
     FKeyboardMap: TKeyboardMap;
     FKeyboard: TKeyboard;
-    FTapeStream: TStream;
+    FBiosRomStream, FTapeStream, FBinStream, FCartridgeStream: TStream;
     FComputer: TMachine;
     FAudioCount: Integer;
     FOsdText: record
@@ -102,6 +97,7 @@ type
     property Computer: TMachine read FComputer write FComputer;
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
+    procedure Initialize; override;
     procedure Run;
     procedure RenderDisplay(AVideo: TVideoController);
     procedure RenderDebugger(ACpu: TCpu8088);
@@ -151,14 +147,12 @@ begin
   if ReadIndex > High(Data) then ReadIndex := 0;
 end;
 
-function TApp.BuildMachine: TMachine;
+function TApplication.BuildMachine: TMachine;
 var
   BiosRomBlock: TRomMemoryBlock;
-  BiosRomStream: TStream;
   Ram, VideoRam: TRamMemoryBlock;
   NmiTrigger: TNmiTrigger;
   CartRomBlock: TRomMemoryBlock;
-  CartRomStream: TFileStream;
 begin
   Result := TMachine.Create(Nil);
 
@@ -198,29 +192,28 @@ begin
   { Cassette drive }
   Result.CassetteDrive := TCassetteDrive.Create(Result);
 
-  if not CartRom.IsEmpty then
+  if Assigned(FCartridgeStream) then
   begin
     CartRomBlock := TRomMemoryBlock.Create(Result, 1024 * 64, $C0000);
     Result.InstallMemory(CartRomBlock);
-    CartRomStream := TFileStream.Create(CartRom, fmOpenRead);
     try
-      CartRomBlock.LoadFromStream(CartRomStream);
+      CartRomBlock.LoadFromStream(FCartridgeStream);
     finally
-      FreeAndNil(CartRomStream);
+      FreeAndNil(FCartridgeStream);
     end;
   end;
 
   Result.Initialize;
 
-  BiosRomStream := TFileStream.Create(BiosRom, fmOpenRead);
-  try
-    BiosRomBlock.LoadFromStream(BiosRomStream);
-  finally
-    FreeAndNil(BiosRomStream);
-  end;
+  if Assigned(FBiosRomStream) then
+    try
+      BiosRomBlock.LoadFromStream(FBiosRomStream);
+    finally
+      FreeAndNil(FBiosRomStream);
+    end;
 end;
 
-procedure TApp.ToggleFullscreen;
+procedure TApplication.ToggleFullscreen;
 begin
   Settings.Window.FullScreen := not Settings.Window.FullScreen;
 
@@ -237,21 +230,19 @@ begin
   ToggleBorderlessWindowed;
 end;
 
-procedure TApp.PrintOsd(AText: String; AColor: TColorB);
+procedure TApplication.PrintOsd(AText: String; AColor: TColorB);
 begin
   FOsdText.Text := AText;
   FOsdText.Color := Fade(AColor, 0.5);
   FOsdText.Lifetime := FPS * 3;
 end;
 
-procedure TApp.PrintOsd(AText: String);
+procedure TApplication.PrintOsd(AText: String);
 begin
   PrintOsd(AText, YELLOW);
 end;
 
-constructor TApp.Create(AOwner: TComponent);
-var
-  Stream: TResourceStream;
+constructor TApplication.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
 
@@ -264,36 +255,9 @@ begin
       TFileStream.Create(DumpFile, fmCreate));
     TWriteBufStream(FDumpStream).SourceOwner := True;
   end;
-
-  InitAudioDevice;
-
-  if not Settings.Window.FullScreen then
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-
-  {$ifndef darwin}
-    SetConfigFlags(FLAG_WINDOW_HIGHDPI);
-  {$EndIf}
-
-  InitWindow(640, 400, PChar(Title));
-  SetTargetFPS(FPS);
-  SetExitKey(KEY_NULL);
-
-  SetWindowSize(Settings.Window.Width, Settings.Window.Height);
-
-  Target := LoadRenderTexture(640, 400);
-  SetTextureFilter(Target.texture, TEXTURE_FILTER_BILINEAR);
-
-  GfxShader := LoadFragmentShaderFromResource('GFX_SHADER');
-
-  Font := LoadFontFromResource('FONT', '.ttf');
-
-  FKeyboardMap := TKeyboardMap.Create;
-  BuildKeyboardMap;
-
-  Computer := BuildMachine;
 end;
 
-destructor TApp.Destroy;
+destructor TApplication.Destroy;
 begin
   if not Settings.Window.FullScreen then
   begin
@@ -323,7 +287,108 @@ begin
   inherited Destroy;
 end;
 
-procedure TApp.Run;
+procedure TApplication.Initialize;
+begin
+  inherited Initialize;
+
+  HandleCommandLine;
+
+  if not Settings.Machine.BiosRom.IsEmpty then
+  begin
+    FBiosRomStream := TMemoryStream.Create;
+    TMemoryStream(FBiosRomStream).LoadFromFile(Settings.Machine.BiosRom);
+  end;
+
+  InitAudioDevice;
+
+  if not Settings.Window.FullScreen then SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+
+  {$IfNDef darwin}
+    SetConfigFlags(FLAG_WINDOW_HIGHDPI);
+  {$EndIf}
+
+  InitWindow(640, 400, PChar(Title));
+  SetTargetFPS(FPS);
+  SetExitKey(KEY_NULL);
+
+  SetWindowSize(Settings.Window.Width, Settings.Window.Height);
+
+  Target := LoadRenderTexture(640, 400);
+  SetTextureFilter(Target.texture, TEXTURE_FILTER_BILINEAR);
+
+  GfxShader := LoadFragmentShaderFromResource('GFX_SHADER');
+
+  Font := LoadFontFromResource('FONT', '.ttf');
+
+  FKeyboardMap := TKeyboardMap.Create;
+  BuildKeyboardMap;
+
+  Computer := BuildMachine;
+end;
+
+procedure TApplication.HandleCommandLine;
+var
+  Option, Extension: String;
+begin
+  for Option in GetNonOptions('', []) do
+  begin
+    Extension := LowerCase(ExtractFileExt(Option));
+    case Extension of
+      '.wav':
+        begin
+          try
+            FTapeStream := TFileStream.Create(Option, fmOpenRead);
+            FWorkingFileName := Option;
+            PrintOsd('[Tape] ' + FWorkingFileName);
+          except
+            on E: Exception do
+            begin
+              PrintOsd('[Tape] ' + E.Message);
+              FWorkingFileName := String.Empty;
+              FreeAndNil(FTapeStream);
+            end;
+          end;
+        end;
+
+      '.cart':
+        begin
+          FCartridgeStream := TMemoryStream.Create;
+          try
+            TMemoryStream(FCartridgeStream).LoadFromFile(Option);
+            FWorkingFileName := Option;
+            PrintOsd('[Cartridge] ' + FWorkingFileName);
+          except
+            on E: Exception do
+            begin
+              PrintOsd('[Cartridge] ' + E.Message);
+              FWorkingFileName := String.Empty;
+              FreeAndNil(FCartridgeStream);
+            end;
+          end;
+        end;
+
+      '.bin':
+        begin
+          FBinStream := TMemoryStream.Create;
+          try
+            TMemoryStream(FBinStream).LoadFromFile(Option);
+            FWorkingFileName := Option;
+          except
+            on E: Exception do
+            begin
+              PrintOsd('[BIN] ' + E.Message);
+              FWorkingFileName := String.Empty;
+              FreeAndNil(FBinStream);
+            end;
+          end;
+        end;
+    else
+      PrintOsd(Format('[Error] Unknown file: %s', [Option]));
+    end;
+  end;
+end;
+
+procedure TApplication.Run;
 const
   TapeFrequency = 8000;
 var
@@ -367,27 +432,6 @@ var
 
 begin
   FDebug := DBG;
-
-  if ParamCount >= 1 then
-    if LowerCase(ExtractFileExt(ParamStr(1))) = '.wav' then
-    begin
-      try
-        FTapeStream := TFileStream.Create(ParamStr(1), fmOpenRead);
-        FWorkingFileName := ParamStr(1);
-        PrintOsd('[Tape] ' + FWorkingFileName);
-      except
-        on E: Exception do
-        begin
-          PrintOsd('[Tape] ' + E.Message);
-          FWorkingFileName := String.Empty;
-          FreeAndNil(FTapeStream);
-        end;
-      end;
-    end
-    else begin
-      BootstrapImage := ParamStr(1);
-      FWorkingFileName := BootstrapImage;
-    end;
 
   Computer.Cpu.InterruptHook := @InterruptHook;
   Computer.Cpu.OnBeforeInstruction := @OnBeforeInstruction;
@@ -659,7 +703,7 @@ begin
   end;
 end;
 
-procedure TApp.DumpMemory(AFileName: String;
+procedure TApplication.DumpMemory(AFileName: String;
   AMemoryBus: IMemoryBus; AAddress: TPhysicalAddress; ALength: Integer);
 var
   Data: Byte;
@@ -676,12 +720,12 @@ begin
   Stream.Free;
 end;
 
-procedure TApp.HandleReadFromTape;
+procedure TApplication.HandleReadFromTape;
 begin
   FComputer.CassetteDrive.Play;
 end;
 
-procedure TApp.HandleWriteToTape;
+procedure TApplication.HandleWriteToTape;
 var
   FileName: String = '';
   Data: Byte;
@@ -721,33 +765,31 @@ begin
   FComputer.CassetteDrive.Record_;
 end;
 
-function TApp.HandleBootstrap(const Cpu: TCpu8088): Boolean;
+function TApplication.HandleBootstrap(const Cpu: TCpu8088): Boolean;
 var
   I: Integer;
-  TestProgram: TMemoryStream;
 begin
   Result := False;
-  if BootstrapImage.IsEmpty then Exit;
+  if not Assigned(FBinStream) then Exit;
 
-  TestProgram := TMemoryStream.Create;
-  TestProgram.LoadFromFile(BootstrapImage);
   I := 0;
-  while TestProgram.Position < TestProgram.Size do
+  while FBinStream.Position < FBinStream.Size do
   begin
-    Cpu.MemoryBus.InvokeWrite(Cpu, $600 + I, TestProgram.ReadByte);
+    Cpu.MemoryBus.InvokeWrite(Cpu, $600 + I, FBinStream.ReadByte);
     Inc(I);
   end;
+  FreeAndNil(FBinStream);
+
   Cpu.Registers.CS := $60;
   Cpu.Registers.DS := $60;
   Cpu.Registers.ES := $60;
   Cpu.Registers.SS := $60;
   Cpu.Registers.IP := $0;
   Cpu.Registers.SP := $FFFE;
-  TestProgram.Free;
   Result := True
 end;
 
-procedure TApp.RenderDisplay(AVideo: TVideoController);
+procedure TApplication.RenderDisplay(AVideo: TVideoController);
 var
   Pixel: TColorB;
   Row, Col: Integer;
@@ -770,7 +812,7 @@ begin
   end;
 end;
 
-procedure TApp.RenderDebugger(ACpu: TCpu8088);
+procedure TApplication.RenderDebugger(ACpu: TCpu8088);
 var
   Left: Integer;
   Color: TColorB;
@@ -940,7 +982,7 @@ begin
   end;
 end;
 
-procedure TApp.BuildKeyboardMap;
+procedure TApplication.BuildKeyboardMap;
 begin
   with FKeyboardMap do
   begin
@@ -1076,7 +1118,7 @@ begin
 end;
 }
 
-procedure TApp.UpdateKeyboard(AKeyboard: TKeyboard);
+procedure TApplication.UpdateKeyboard(AKeyboard: TKeyboard);
 var
   Item: specialize TPair<TKeyboard.TKey, specialize TArray<RayLib.TKeyboardKey>>;
   RaylibKey: RayLib.TKeyboardKey;
@@ -1089,7 +1131,7 @@ begin
   end;
 end;
 
-function TApp.InterruptHook(ASender: TObject; ANumber: Byte): Boolean;
+function TApplication.InterruptHook(ASender: TObject; ANumber: Byte): Boolean;
 var
   Cpu: TCpu8088 absolute ASender;
 begin
@@ -1126,7 +1168,7 @@ begin
   end;
 end;
 
-procedure TApp.TimerOutputChange(ASender: TObject; AChannel: Integer;
+procedure TApplication.TimerOutputChange(ASender: TObject; AChannel: Integer;
   AValue: Boolean);
 begin
   {
@@ -1143,7 +1185,7 @@ begin
   end;
 end;
 
-function TApp.OnBeforeInstruction(ASender: TObject; AAddress: TPhysicalAddress): Boolean;
+function TApplication.OnBeforeInstruction(ASender: TObject; AAddress: TPhysicalAddress): Boolean;
 var
   Cpu: TCpu8088 absolute ASender;
   Res: TBinarySearchResult;
@@ -1172,7 +1214,7 @@ begin
   Result := FStepByStep;
 end;
 
-procedure TApp.OnBeforeExecution(ASender: TObject; AInstruction: TInstruction);
+procedure TApplication.OnBeforeExecution(ASender: TObject; AInstruction: TInstruction);
 var
   Cpu: TCpu8088 absolute ASender;
   DumpFrame: Dump.TDumpFrame;
@@ -1188,7 +1230,7 @@ begin
   FDumpStream.Write(DumpFrame, SizeOf(DumpFrame));
 end;
 
-procedure TApp.OnAfterInstruction(ASender: TObject; AInstruction: TInstruction);
+procedure TApplication.OnAfterInstruction(ASender: TObject; AInstruction: TInstruction);
 var
   Line: String;
   Data: Byte;
@@ -1208,7 +1250,7 @@ begin
     ]));
 end;
 
-function TApp.LoadFontFromResource(
+function TApplication.LoadFontFromResource(
   const AResourceName: String; const AFileType: String): TFont;
 var
   Stream: TResourceStream;
@@ -1222,7 +1264,7 @@ begin
   end;
 end;
 
-function TApp.LoadFragmentShaderFromResource(const AResourceName: String): TShader;
+function TApplication.LoadFragmentShaderFromResource(const AResourceName: String): TShader;
 var
   Stream: TResourceStream;
   Content: String;
@@ -1254,7 +1296,7 @@ begin
 end;
 
 var
-  App: TApp;
+  Application: TApplication;
 
 {$R *.res}
 
@@ -1263,12 +1305,10 @@ begin
 
   AudioBuffer := TRingBuffer.Create;
 
-  if not Settings.Machine.BiosRom.IsEmpty then
-    BiosRom := Settings.Machine.BiosRom;
-
-  App := TApp.Create(Nil);
-  App.Run;
-  App.Free;
+  Application := TApplication.Create(Nil);
+  Application.Initialize;
+  Application.Run;
+  Application.Free;
 
   AudioBuffer.Free;
 end.

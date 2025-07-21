@@ -188,8 +188,10 @@ begin
   if Channel.CountingMode = cmBcd then
     raise Exception.Create('BCD counting mode: not implemented');
 
+  {
   Writeln('Channel ', ACommand.Channel, ' set to ', ACommand.OperatingMode, ' mode. ' +
     'Acc mode: ', ACommand.AccessMode);
+  }
 
   Channel.AccessMode := ACommand.AccessMode;
   Channel.OperatingMode := ACommand.OperatingMode;
