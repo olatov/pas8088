@@ -92,14 +92,27 @@ var
 begin
   Config := TIniFile.Create(AFileName);
   try
-    Machine.ClockSpeed := Config.ReadInteger('Machine', 'ClockSpeed', 1250000);
-    Machine.CpuSpeed := Config.ReadInteger('Machine', 'CpuSpeed', 250000);
+    Machine.ClockSpeed := EnsureRange(
+      Config.ReadInteger('Machine', 'ClockSpeed', 1250000),
+      125000, 2500000);
+
+    Machine.CpuSpeed := EnsureRange(
+      Config.ReadInteger('Machine', 'CpuSpeed', 250000),
+      125000, 2500000);
+    Machine.CpuSpeed := Min(Machine.ClockSpeed, Machine.CpuSpeed);
+
     Machine.Ram := EnsureRange(
       Config.ReadInteger('Machine', 'Ram', 640), 128, 640);
     Machine.BiosRom := 'poisk_1991.rom';
 
-    Window.Width := Config.ReadInteger('Window', 'Width', 640);
-    Window.Height := Config.ReadInteger('Window', 'Height', 400);
+    Window.Width := EnsureRange(
+      Config.ReadInteger('Window', 'Width', 640),
+      640, 3840);
+
+    Window.Height := EnsureRange(
+      Config.ReadInteger('Window', 'Height', 400),
+      400, 2160);
+
     Window.AspectRatio := Config.ReadFloat('Window', 'AspectRatio', 0);
     Window.FullScreen := Config.ReadBool('Window', 'FullScreen', False);
 

@@ -497,9 +497,14 @@ begin
       begin
         Settings.Audio.Mute := not Settings.Audio.Mute;
         if Settings.Audio.Mute then
-          PauseAudioStream(SpeakerAudioStream)
-        else
+        begin
+          PauseAudioStream(SpeakerAudioStream);
+          PrintOsd('Sound off');
+        end else
+        begin
           ResumeAudioStream(SpeakerAudioStream);
+          PrintOsd('Sound on');
+        end;
       end;
     end else
       UpdateKeyboard(FKeyboard);
