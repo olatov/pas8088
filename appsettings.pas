@@ -67,6 +67,7 @@ begin
   Config := TIniFile.Create(AFileName);
   try
     Config.WriteInteger('Machine', 'ClockSpeed', Machine.ClockSpeed);
+    Config.WriteInteger('Machine', 'CpuSpeed', Machine.CpuSpeed);
     Config.WriteInteger('Machine', 'RAM', Machine.Ram);
     Config.WriteString('Machine', 'BiosRom', Machine.BiosRom);
 
