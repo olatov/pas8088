@@ -52,12 +52,13 @@ type
         type
           TState = (csUninitialized, csWaitingLoByte, csWaitingHiByte, csValueSet, csCounting);
       public
+        Id: Integer;
         CountingMode: TCountMode;
         AccessMode: TAccessMode;
         AccessState: TAccessState;
         State: TState;
         Value, InternalDivisor: Integer;
-        NewValue: Integer;
+        NewReloadValue: Integer;
         Output: Boolean;
         SquareModeTrigger: Boolean;
         ReadIndex: (riHiByte, riLoByte);
@@ -187,10 +188,8 @@ begin
   if Channel.CountingMode = cmBcd then
     raise Exception.Create('BCD counting mode: not implemented');
 
-  {
   Writeln('Channel ', ACommand.Channel, ' set to ', ACommand.OperatingMode, ' mode. ' +
     'Acc mode: ', ACommand.AccessMode);
-  }
 
   Channel.AccessMode := ACommand.AccessMode;
   Channel.OperatingMode := ACommand.OperatingMode;
@@ -210,7 +209,10 @@ begin
   FTickBatchSize := Round(BaseFrequency / AActualFrequency);
 
   for I := 0 to High(FChannels) do
+  begin
     FChannels[I] := TChannel.Create(Self);
+    FChannels[I].Id := I;
+  end;
 
   FChannels[0].Gate := True;
   FChannels[1].Gate := True;
@@ -439,33 +441,26 @@ begin
       end;
   end;
 
-  if State = csValueSet then
-
-  {
-  Writeln('Divisor set to ', InternalDivisor,
-    ' [', OperatingMode ,', ', AccessMode, ']; Gate: ', Gate, ', Out: ', Output);
-  }
-
   case State of
     csValueSet:
       case OperatingMode of
         omInterruptOnTerminalCount:
           begin
+            ReloadValue := NewReloadValue;
             Value := InternalDivisor;
             State := csCounting;
           end;
 
         omRateGenerator:
           begin
+            ReloadValue := NewReloadValue;
             Value := InternalDivisor;
             State := csCounting;
           end;
 
         omSquareWaveGenerator, omSquareWaveGeneratorDuplicate:
           begin
-            if Odd(InternalDivisor) then Dec(InternalDivisor);
-            if InternalDivisor = 0 then InternalDivisor := 65536;
-            Value := InternalDivisor;
+            ReloadValue := NewReloadValue;
             State := csCounting;
           end;
       end;
@@ -477,7 +472,7 @@ begin
   Assert(State in [csWaitingLoByte, csWaitingHiByte]);
   Assert(AccessMode in [amHiByte, amLoByteHiByte]);
 
-  ReloadValue := Lo(ReloadValue) or (AValue shl 8);
+  NewReloadValue := Lo(NewReloadValue) or (AValue shl 8);
   State := csValueSet;
 end;
 
@@ -486,7 +481,7 @@ begin
   Assert(State in [csWaitingLoByte, csCounting]);
   Assert(AccessMode in [amLoByte, amLoByteHiByte]);
 
-  ReloadValue := Hi(ReloadValue) or AValue;
+  NewReloadValue := Hi(NewReloadValue) or AValue;
   State := specialize IfThen<TState>(
     AccessMode = amLoByteHiByte,
     csWaitingHiByte, csValueSet)

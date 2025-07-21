@@ -247,7 +247,7 @@ end;
 function TCassetteDrive.OnIORead(
   ADevice: IIOBusDevice; AAddress: Word; out AData: Byte): Boolean;
 begin
-
+  Result := False;
 end;
 
 procedure TCassetteDrive.OnIOWrite(

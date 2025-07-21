@@ -19,7 +19,6 @@ uses
   Cpu8088, Memory, IO, Machine, VideoController, Interrupts, Hardware, Debugger,
   Keyboard, Dump, Timer, AppSettings, Cassette;
 
-
 const
   FPS = 50;
 
@@ -50,7 +49,7 @@ var
   CartRom: String = '';
   CassetteImage: String = '';
   BootstrapImage: String = '';
-  DumpFile: String = '';
+  DumpFile: String = '/tmp/ptica.dump';
 
   Breakpoints: array of TPhysicalAddress = ($00000);
 
@@ -865,7 +864,6 @@ begin
       Vector2Create(Left, (11 + I) * (FontSize + VertSpacing) + 240), FontSize, 1, Color);
   end;
 
-
   DrawTextEx(
     Font,
     PChar(Format('C(%d)', [IfThen(ACpu.Registers.Flags.CF, 1, 0)])),
@@ -1192,7 +1190,9 @@ var
   Frame: TDumpFrame;
   Cpu: TCpu8088 absolute ASender;
 begin
-  //if (AInstruction.CS = $C000) then FKeybEnabled := False;
+  //if (AInstruction.CS = $070) then FStepByStep := True;
+  if (AInstruction.CS = $F000) then Exit;
+  //if (AInstruction.CS = $70) then FDebug := True;
 
   if (FDebug or FStepByStep) then
     WriteLn(Format('%.4x:%.4x | %-24s | %s ',
