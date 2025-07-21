@@ -14,4 +14,7 @@ backup/
 *.img
 *.wav
 *.dll
-
+*.exe
+*.res
+*.com
+./pas8088

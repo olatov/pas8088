@@ -9,8 +9,11 @@ program pas8088;
 
 uses
   {$IFDEF UNIX}
-  cthreads,
+  //CThreads,
   {$ENDIF}
+  {$IfDef MSWINDOWS}
+  Windows,
+  {$EndIf}
   Classes, SysUtils, StrUtils, Math, StreamEx, BufStream, Generics.Collections,
   CustApp, RayLib, RayMath,
   Cpu8088, Memory, IO, Machine, VideoController, Interrupts, Hardware, Debugger,
@@ -58,15 +61,20 @@ type
 
   TApp = class(TCustomApplication)
   private
+    FFont: TFont;
+    FGfxShader: TShader;
+    FSpeakerStream: TAudioStream;
     procedure DumpMemory(AFileName: String; AMemoryBus: IMemoryBus;
       AAddress: TPhysicalAddress; ALength: Integer);
+    function LoadFontFromResource(const AResourceName: String;
+      const AFileType: String): TFont;
+    function LoadFragmentShaderFromResource(const AResourceName: String): TShader;
     procedure OnBeforeExecution(ASender: TObject; AInstruction: TInstruction);
   public
     type
       TKeyboardMap = specialize TDictionary<TKeyboard.TKey, specialize TArray<RayLib.TKeyboardKey>>;
   public
     Target: TRenderTexture;
-    FFont: TFont;
     FDebugger: TDebugger;
     FLogWriter: TStreamWriter;
     FDumpStream: TStream;
@@ -87,6 +95,10 @@ type
       Color: TColorB;
       Lifetime: Integer; { In frames }
     end;
+    property Font: TFont read FFont write FFont;
+    property GfxShader: TShader read FGfxShader write FGfxShader;
+    property SpeakerAudioStream: TAudioStream read FSpeakerStream write FSpeakerStream;
+    property Computer: TMachine read FComputer write FComputer;
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
     procedure Run;
@@ -238,6 +250,8 @@ begin
 end;
 
 constructor TApp.Create(AOwner: TComponent);
+var
+  Stream: TResourceStream;
 begin
   inherited Create(AOwner);
 
@@ -251,17 +265,61 @@ begin
     TWriteBufStream(FDumpStream).SourceOwner := True;
   end;
 
+  InitAudioDevice;
+
+  if not Settings.Window.FullScreen then
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+
+  {$ifndef darwin}
+    SetConfigFlags(FLAG_WINDOW_HIGHDPI);
+  {$EndIf}
+
+  InitWindow(640, 400, PChar(Title));
+  SetTargetFPS(FPS);
+  SetExitKey(KEY_NULL);
+
+  SetWindowSize(Settings.Window.Width, Settings.Window.Height);
+
+  Target := LoadRenderTexture(640, 400);
+  SetTextureFilter(Target.texture, TEXTURE_FILTER_BILINEAR);
+
+  GfxShader := LoadFragmentShaderFromResource('GFX_SHADER');
+
+  Font := LoadFontFromResource('FONT', '.ttf');
+
   FKeyboardMap := TKeyboardMap.Create;
   BuildKeyboardMap;
+
+  Computer := BuildMachine;
 end;
 
 destructor TApp.Destroy;
 begin
+  if not Settings.Window.FullScreen then
+  begin
+    Settings.Window.Width := GetScreenWidth;
+    Settings.Window.Height := GetScreenHeight;
+  end;
+
+  UnloadShader(GfxShader);
+  UnloadRenderTexture(Target);
+  UnloadFont(Font);
+
+  CloseWindow;
+
+  UnloadAudioStream(SpeakerAudioStream);
+  CloseAudioDevice;
+
+  FreeAndNil(FComputer);
+
+  Settings.Save;
+
   FreeAndNil(FDebugger);
   FreeAndNil(FLogWriter);
   FreeAndNil(FDumpStream);
   FreeAndNil(FTapeStream);
   FreeAndNil(FKeyboardMap);
+
   inherited Destroy;
 end;
 
@@ -269,13 +327,10 @@ procedure TApp.Run;
 const
   TapeFrequency = 8000;
 var
-  Computer: TMachine;
-  ScanlineShader, GrayscaleShader, Shader: TShader;
   LinesLoc, I, Underruns, CyclesPerSpeakerSample: Integer;
   LinesCount: Single = 400.0;
   Listing: array of TDebugger.TSourceLine;
   PrevTicks: QWord = 0;
-  SpeakerStream: TAudioStream;
   ScanlinesEnabled, GrayscaleEnabled, CyclesPerFrame: Integer;
   TargetRectangle: TRectangle;
   CyclesPerCassetteSample: Integer;
@@ -334,42 +389,16 @@ begin
       FWorkingFileName := BootstrapImage;
     end;
 
-  InitAudioDevice;
-
-  if not Settings.Window.FullScreen then
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-
-  {$ifndef darwin}
-    SetConfigFlags(FLAG_WINDOW_HIGHDPI);
-  {$EndIf}
-
-  Title := 'Poisk';
-  InitWindow(640, 400, PChar(Title));
-  SetTargetFPS(FPS);
-  SetExitKey(KEY_NULL);
-
-  SetWindowSize(Settings.Window.Width, Settings.Window.Height);
-
-  FFont := LoadFont(FontFile);
-
-  Target := LoadRenderTexture(640, 400);
-  SetTextureFilter(Target.texture, TEXTURE_FILTER_BILINEAR);
-
-  Computer := BuildMachine;
-  FComputer := Computer;
-
   Computer.Cpu.InterruptHook := @InterruptHook;
   Computer.Cpu.OnBeforeInstruction := @OnBeforeInstruction;
   Computer.Cpu.OnAfterInstruction := @OnAfterInstruction;
   Computer.Cpu.OnBeforeExecution := @OnBeforeExecution;
   Computer.Timer.OnChannelOutputChange := @TimerOutputChange;
 
-  Shader := LoadShader(Nil, TextFormat('shader.fs'));
+  LinesLoc := GetShaderLocation(GfxShader, 'lines');
+  SetShaderValue(GfxShader, LinesLoc, @LinesCount, SHADER_UNIFORM_FLOAT);
 
-  LinesLoc := GetShaderLocation(Shader, 'lines');
-
-  SetShaderValue(Shader, LinesLoc, @LinesCount, SHADER_UNIFORM_FLOAT);
-
+  Title := 'Poisk';
   if not FWorkingFileName.IsEmpty then
   begin
     Title := Title + ' - ' + FWorkingFileName;
@@ -381,13 +410,13 @@ begin
 
   { Audio stream }
   SetAudioStreamBufferSizeDefault(SpeakerSamplesPerFrame);
-  SpeakerStream := LoadAudioStream(SpeakerSampleRate, 8, 1);
-  SetAudioStreamCallback(SpeakerStream, @AudioCallback);
+  SpeakerAudioStream := LoadAudioStream(SpeakerSampleRate, 8, 1);
+  SetAudioStreamCallback(SpeakerAudioStream, @AudioCallback);
 
   SetMasterVolume(Settings.Audio.Volume);
 
-  PlayAudioStream(SpeakerStream);
-  if Settings.Audio.Mute then PauseAudioStream(SpeakerStream);
+  PlayAudioStream(SpeakerAudioStream);
+  if Settings.Audio.Mute then PauseAudioStream(SpeakerAudioStream);
 
   FKeybEnabled := True;
 
@@ -468,9 +497,9 @@ begin
       begin
         Settings.Audio.Mute := not Settings.Audio.Mute;
         if Settings.Audio.Mute then
-          PauseAudioStream(SpeakerStream)
+          PauseAudioStream(SpeakerAudioStream)
         else
-          ResumeAudioStream(SpeakerStream);
+          ResumeAudioStream(SpeakerAudioStream);
       end;
     end else
       UpdateKeyboard(FKeyboard);
@@ -478,12 +507,12 @@ begin
     GrayscaleEnabled := IfThen(Settings.Video.Grayscale, 1, 0);
     ScanlinesEnabled := IfThen(Settings.Video.ScanLines, 1, 0);
 
-    SetShaderValue(Shader,
-      GetShaderLocation(Shader, 'enableGrayscale'),
+    SetShaderValue(GfxShader,
+      GetShaderLocation(GfxShader, 'enableGrayscale'),
       @GrayscaleEnabled, SHADER_UNIFORM_INT);
 
-    SetShaderValue(Shader,
-      GetShaderLocation(Shader, 'enableScanlines'),
+    SetShaderValue(GfxShader,
+      GetShaderLocation(GfxShader, 'enableScanlines'),
       @ScanlinesEnabled, SHADER_UNIFORM_INT);
 
     Inc(FFrames);
@@ -591,7 +620,7 @@ begin
       TargetRectangle.x := TargetRectangle.x / GetWindowScaleDPI.x;
       TargetRectangle.y := TargetRectangle.y / GetWindowScaleDPI.y;
 
-      BeginShaderMode(Shader);
+      BeginShaderMode(GfxShader);
 
       DrawTexturePro(
         Target.texture,
@@ -604,7 +633,7 @@ begin
       if (FOsdText.Lifetime > 0) then
       begin
         DrawRectangle(0, 0, 640, 56, ColorAlpha(BLACK, Min(FOsdText.Lifetime / FPS, 0.8)));
-        DrawTextEx(FFont,
+        DrawTextEx(Font,
           PChar(FOsdText.Text),
           Vector2Create(0, 0), 48, 0,
           ColorAlpha(FOsdText.Color, Min(FOsdText.Lifetime / FPS, 1)));
@@ -614,25 +643,6 @@ begin
         RenderDebugger(Computer.Cpu);
     EndDrawing;
   end;
-
-  UnloadShader(Shader);
-
-  UnloadRenderTexture(Target);
-
-  if not Settings.Window.FullScreen then
-  begin
-    Settings.Window.Width := GetRenderWidth;
-    Settings.Window.Height := GetRenderHeight;
-  end;
-
-  CloseWindow;
-
-  UnloadAudioStream(SpeakerStream);
-  CloseAudioDevice;
-
-  FreeAndNil(Computer);
-
-  Settings.Save;
 end;
 
 procedure TApp.DumpMemory(AFileName: String;
@@ -720,7 +730,7 @@ begin
   Color := ColorAlpha(YELLOW, 0.9);
 
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('%.4x:%.4x %s',
       [
         ACpu.Registers.CS, ACpu.Registers.IP,
@@ -730,58 +740,58 @@ begin
     Vector2Create(Left - 800, 0 * (FontSize + VertSpacing) + 0), CodeFontSize, 1, Color);
 
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('AX %.4x', [ACpu.Registers.AX])),
     Vector2Create(Left, 0 * (FontSize + VertSpacing) + 0), FontSize, 1, Color);
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('BX %.4x', [ACpu.Registers.BX])),
     Vector2Create(Left, 1 * (FontSize + VertSpacing) + 0), FontSize, 1, Color);
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('CX %.4x', [ACpu.Registers.CX])),
     Vector2Create(Left, 2 * (FontSize + VertSpacing) + 0), FontSize, 1, Color);
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('DX %.4x', [ACpu.Registers.DX])),
     Vector2Create(Left, 3 * (FontSize + VertSpacing) + 0), FontSize, 1, Color);
 
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('BP %.4x', [ACpu.Registers.BP])),
     Vector2Create(Left, 4 * (FontSize + VertSpacing) + 48), FontSize, 1, Color);
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('SP %.4x', [ACpu.Registers.SP])),
     Vector2Create(Left, 5 * (FontSize + VertSpacing) + 48), FontSize, 1, Color);
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('SI %.4x', [ACpu.Registers.SI])),
     Vector2Create(Left, 6 * (FontSize + VertSpacing) + 48), FontSize, 1, Color);
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('DI %.4x', [ACpu.Registers.DI])),
     Vector2Create(Left, 7 * (FontSize + VertSpacing) + 48), FontSize, 1, Color);
 
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('CS %.4x', [ACpu.Registers.CS])),
     Vector2Create(Left, 8 * (FontSize + VertSpacing) + 96), FontSize, 1, Color);
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('DS %.4x', [ACpu.Registers.DS])),
     Vector2Create(Left, 9 * (FontSize + VertSpacing) + 96), FontSize, 1, Color);
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('ES %.4x', [ACpu.Registers.ES])),
     Vector2Create(Left, 10 * (FontSize + VertSpacing) + 96), FontSize, 1, Color);
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('SS %.4x', [ACpu.Registers.SS])),
     Vector2Create(Left, 11 * (FontSize + VertSpacing) + 96), FontSize, 1, Color);
 
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('FL %.4x', [ACpu.Registers.Flags.GetWord])),
     Vector2Create(Left, 12 * (FontSize + VertSpacing) + 128), FontSize, 1, Color);
 
@@ -795,62 +805,62 @@ begin
     DataWord := DataWord or (DataByte shl 8);
 
     DrawTextEx(
-      FFont,
+      Font,
       PChar(Format('ST(%d) %.4x', [I, DataWord])),
       Vector2Create(Left, (11 + I) * (FontSize + VertSpacing) + 240), FontSize, 1, Color);
   end;
 
 
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('C(%d)', [IfThen(ACpu.Registers.Flags.CF, 1, 0)])),
     Vector2Create(Left + 240, 0 * (FontSize + VertSpacing) + 0), FontSize, 1,
     specialize IfThen<TColorB>(ACpu.Registers.Flags.CF, YELLOW, GRAY));
 
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('Z(%d)', [IfThen(ACpu.Registers.Flags.ZF, 1, 0)])),
     Vector2Create(Left + 240, 1 * (FontSize + VertSpacing) + 0), FontSize, 1,
     specialize IfThen<TColorB>(ACpu.Registers.Flags.ZF, YELLOW, GRAY));
 
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('S(%d)', [IfThen(ACpu.Registers.Flags.SF, 1, 0)])),
     Vector2Create(Left + 240, 2 * (FontSize + VertSpacing) + 0), FontSize, 1,
     specialize IfThen<TColorB>(ACpu.Registers.Flags.SF, YELLOW, GRAY));
 
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('O(%d)', [IfThen(ACpu.Registers.Flags.OF_, 1, 0)])),
     Vector2Create(Left + 240, 3 * (FontSize + VertSpacing) + 0), FontSize, 1,
     specialize IfThen<TColorB>(ACpu.Registers.Flags.OF_, YELLOW, GRAY));
 
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('P(%d)', [IfThen(ACpu.Registers.Flags.PF, 1, 0)])),
     Vector2Create(Left + 240, 4 * (FontSize + VertSpacing) + 0), FontSize, 1,
     specialize IfThen<TColorB>(ACpu.Registers.Flags.PF, YELLOW, GRAY));
 
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('A(%d)', [IfThen(ACpu.Registers.Flags.AF, 1, 0)])),
     Vector2Create(Left + 240, 5 * (FontSize + VertSpacing) + 0), FontSize, 1,
     specialize IfThen<TColorB>(ACpu.Registers.Flags.AF, YELLOW, GRAY));
 
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('D(%d)', [IfThen(ACpu.Registers.Flags.DF, 1, 0)])),
     Vector2Create(Left + 240, 6 * (FontSize + VertSpacing) + 0), FontSize, 1,
     specialize IfThen<TColorB>(ACpu.Registers.Flags.DF, YELLOW, GRAY));
 
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('I(%d)', [IfThen(ACpu.Registers.Flags.IF_, 1, 0)])),
     Vector2Create(Left + 240, 7 * (FontSize + VertSpacing) + 0), FontSize, 1,
     specialize IfThen<TColorB>(ACpu.Registers.Flags.IF_, YELLOW, GRAY));
 
   DrawTextEx(
-    FFont,
+    Font,
     PChar(Format('T(%d)', [IfThen(ACpu.Registers.Flags.TF, 1, 0)])),
     Vector2Create(Left + 240, 8 * (FontSize + VertSpacing) + 0), FontSize, 1,
     specialize IfThen<TColorB>(ACpu.Registers.Flags.TF, YELLOW, GRAY));
@@ -865,7 +875,7 @@ begin
     Listing := FDebugger.GetListing(Addr, 6, 30);
     for I := 0 to Min(25, High(Listing)) do
       DrawTextEx(
-        FFont,
+        Font,
         PChar(Format('%.5x | %s', [Listing[I].Address, Listing[I].Contents])),
         Vector2Create(Left - 800, I * (FontSize + 8) + 120), CodeFontSize, 1,
         specialize IfThen<TColorB>(Listing[I].Address = Addr, YELLOW, GRAY));
@@ -1165,6 +1175,36 @@ begin
     ]));
 end;
 
+function TApp.LoadFontFromResource(
+  const AResourceName: String; const AFileType: String): TFont;
+var
+  Stream: TResourceStream;
+begin
+  Stream := TResourceStream.Create(HINSTANCE, AResourceName, RT_RCDATA);
+  try
+    Result := LoadFontFromMemory(
+      PChar(AFileType), Stream.Memory, Stream.Size, 48, Nil, 0);
+  finally
+    FreeAndNil(Stream);
+  end;
+end;
+
+function TApp.LoadFragmentShaderFromResource(const AResourceName: String): TShader;
+var
+  Stream: TResourceStream;
+  Content: String;
+begin
+  Stream := TResourceStream.Create(HINSTANCE, AResourceName, RT_RCDATA);
+  try
+    SetLength(Content, Stream.Size);
+    Stream.Read(Content[1], Stream.Size);
+    Result := LoadShaderFromMemory(Nil, PChar(Content));
+  finally
+    FreeAndNil(Stream);
+  end;
+end;
+
+
 procedure AudioCallback(buffer: Pointer; Frames: LongWord); cdecl;
 var
   I: Integer;
@@ -1182,6 +1222,8 @@ end;
 
 var
   App: TApp;
+
+{$R *.res}
 
 begin
   SetExceptionMask(GetExceptionMask + [exInvalidOp, exOverflow, exZeroDivide]);

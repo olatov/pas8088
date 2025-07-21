@@ -130,6 +130,8 @@ var
   Buffer: array[1..(512 * 1024)] of Byte;
   I: Integer;
 begin
+  if not Assigned(FTapeStream) then Exit;
+
   Fmt := FWavReader.Fmt;
   OneSec := Fmt.SampleRate * Fmt.Channels * Fmt.BitsPerSample div 8;
 

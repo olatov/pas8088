@@ -12,6 +12,10 @@
       <Title Value="pas8088"/>
       <UseAppBundle Value="False"/>
       <ResourceType Value="res"/>
+      <Resources Count="2">
+        <Resource_0 FileName="gfx/shader.fs" Type="RCDATA" ResourceName="GFX_SHADER"/>
+        <Resource_1 FileName="fonts/LiberationMono-Bold.ttf" Type="RCDATA" ResourceName="FONT"/>
+      </Resources>
     </General>
     <BuildModes>
       <Item Name="Default" Default="True"/>
@@ -149,6 +153,10 @@
       </Unit>
       <Unit>
         <Filename Value="Readme.txt"/>
+        <IsPartOfProject Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="shader.fs"/>
         <IsPartOfProject Value="True"/>
       </Unit>
     </Units>
