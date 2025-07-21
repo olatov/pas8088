@@ -77,6 +77,12 @@ begin
   Cpu.Tick;
   Timer.Tick;
   Video.Tick;
+
+  case CassetteDrive.State of
+    csPlaying: Timer.TapeIn := CassetteDrive.TapeIn;
+    csRecording: CassetteDrive.TapeOut := Timer.TapeOut;
+  else;
+  end;
 end;
 
 procedure TMachine.Run(ATicks: Integer);

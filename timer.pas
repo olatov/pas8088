@@ -110,17 +110,21 @@ type
     FChannels: array[0..(ChannelsCount - 1)] of TChannel;
     FLatch: Word;
     FOnChannelOutputChange: TTimerOutputNotify;
+    FTapeIn: Boolean;
     FTickBatchSize: Integer;
     FSpeaker: TSpeaker;
     FSpeakerGate: Boolean;
     function GetOutput(AChannel: Integer): Boolean;
     function GetSpeakerOutput: Boolean;
+    function GetTapeOut: Boolean;
     procedure SetOnChannelOutputChange(AValue: TTimerOutputNotify);
     procedure WriteChannelPort(AChannel: Integer; AValue: Byte);
     procedure WriteCommandPort(ACommand: TCommand);
   public
     property Speaker: TSpeaker read FSpeaker;
     property SpeakerOutput: Boolean read GetSpeakerOutput;
+    property TapeIn: Boolean read FTapeIn write FTapeIn; { move to PPI }
+    property TapeOut: Boolean read GetTapeOut;
     constructor Create(AOwner: TComponent; AActualFrequency: Integer); reintroduce;
     procedure Tick;
     procedure Reset;
@@ -158,6 +162,11 @@ end;
 function TPit8253.GetSpeakerOutput: Boolean;
 begin
 
+end;
+
+function TPit8253.GetTapeOut: Boolean;
+begin
+  Result := Self.FChannels[2].Output;
 end;
 
 procedure TPit8253.WriteCommandPort(ACommand: TCommand);
@@ -287,10 +296,17 @@ begin
 
     $61:
       begin
-        AData := IfThen(FChannels[2].Output, $20, 0)
+        AData := IfThen(FChannels[2].Output, $20, 0) { ? }
           or IfThen(Speaker.GateInputs[1], $02, 0);
         Result := True;
       end;
+
+    $62:
+      begin
+        AData := IfThen(FChannels[2].Output, $20, 0);
+        if TapeIn then AData := AData or $10;
+        Result := True;
+      end
   else
     Result := False;
   end;

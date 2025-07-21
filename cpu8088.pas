@@ -574,7 +574,16 @@ type
     procedure OnMemoryWrite(Sender: IMemoryBusDevice; AAddress: TPhysicalAddress; AData: Byte);
   end;
 
+  function GetPhysicalAddress(ASegment, AOffset: Word): TPhysicalAddress;
+
 implementation
+
+function GetPhysicalAddress(ASegment, AOffset: Word): TPhysicalAddress;
+begin
+  Result := ((ASegment shl 4) + AOffset);
+  while Result > High(TPhysicalAddress) do
+    Dec(Result, High(TPhysicalAddress) + 1);
+end;
 
 { TFlagRegister }
 

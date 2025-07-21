@@ -66,6 +66,8 @@ type
     FSpeakerStream: TAudioStream;
     procedure DumpMemory(AFileName: String; AMemoryBus: IMemoryBus;
       AAddress: TPhysicalAddress; ALength: Integer);
+    procedure HandleReadFromTape;
+    procedure HandleWriteToTape;
     function LoadFontFromResource(const AResourceName: String;
       const AFileType: String): TFont;
     function LoadFragmentShaderFromResource(const AResourceName: String): TShader;
@@ -106,8 +108,7 @@ type
     procedure RenderDebugger(ACpu: TCpu8088);
     procedure BuildKeyboardMap;
     function HandleBootstrap(const Cpu: TCpu8088): Boolean;
-    procedure HandleLoadFromBinaryTape(ACpu: TCpu8088);
-    procedure HandleLoadFromWavTape;
+    { procedure HandleLoadFromBinaryTape(ACpu: TCpu8088); }
     procedure UpdateKeyboard(AKeyboard: TKeyboard);
     function BuildMachine: TMachine;
     procedure ToggleFullscreen;
@@ -529,12 +530,18 @@ begin
     Computer.Timer.Speaker.BeginAudioChunk;
 
     if Computer.CassetteDrive.State in [csPlaying, csRecording] then
+    begin
+      CyclesPerCassetteSample := Settings.Machine.ClockSpeed div Computer.CassetteDrive.SampleRate;
+      TapeDelta := CyclesPerCassetteSample / Settings.Machine.ClockSpeed;
+
       SetWindowTitle(PChar(
         Format('Poisk - %s [%s]',
         [
           FWorkingFileName,
           TapePositionAsText
         ])));
+    end;
+
     try
       if (not FStepByStep) or (Computer.Cpu.Registers.CS >= $F000) then
       begin
@@ -547,21 +554,24 @@ begin
           if FStepByStep then Break;
 
           if (Computer.Cpu.Ticks mod CyclesPerSpeakerSample) = 0 then
-            if (Computer.CassetteDrive.State = csPlaying) then
-              Computer.Timer.Speaker.CaptureSample(
-                Computer.CassetteDrive.TapeIn, 0.5)
+            { Time to play a sample from tape noise }
+            case Computer.CassetteDrive.State of
+              csPlaying:
+                Computer.Timer.Speaker.CaptureSample(Computer.CassetteDrive.TapeIn, 0.4);
+              csRecording:
+                Computer.Timer.Speaker.CaptureSample(Computer.CassetteDrive.TapeOut, 0.4);
             else
               Computer.Timer.Speaker.CaptureSample;
+            end;
 
           if (Computer.CassetteDrive.State in [csPlaying, csRecording]) and
               ((Computer.Cpu.Ticks mod CyclesPerCassetteSample) = 0) then
-          begin
-            TapeDelta := CyclesPerCassetteSample / Settings.Machine.ClockSpeed;
+            { Time to update the state of tape }
             Computer.CassetteDrive.Tick(TapeDelta);
-          end;
         end;
       end else
       begin
+        { Debugger mode keys }
         if IsKeyPressed(KEY_F7) or IsKeyPressedRepeat(KEY_F7) then
         begin
           Computer.Run(1); { Step into }
@@ -662,6 +672,51 @@ begin
   Stream.Free;
 end;
 
+procedure TApp.HandleReadFromTape;
+begin
+  FComputer.CassetteDrive.Play;
+end;
+
+procedure TApp.HandleWriteToTape;
+var
+  FileName: String = '';
+  Data: Byte;
+  I: Integer;
+begin
+  if Computer.CassetteDrive.State <> csStopped then Exit;
+
+  { Release current tape if any, new tape will be created }
+  FreeAndNil(FTapeStream);
+
+  { See if there's tape file header by checking the magic byte }
+  Computer.MemoryBus.InvokeRead(Nil,
+    GetPhysicalAddress(Computer.Cpu.Registers.ES, Computer.Cpu.Registers.BX),
+    Data);
+
+  if Data = $A5 then
+  begin
+    { Yes - read file name from the header }
+    SetLength(FileName, 8);
+    for I := 1 to 8 do
+    begin
+      Computer.MemoryBus.InvokeRead(Nil,
+        GetPhysicalAddress(
+          Computer.Cpu.Registers.ES,
+          Computer.Cpu.Registers.BX + I),
+        Data);
+      FileName[I] := AnsiChar(Data);
+    end;
+    FileName := LowerCase(Trim(FileName));
+  end else
+    { No - use default one }
+    FileName := 'tapeout';
+
+  FileName := FileName + '.wav';
+  FTapeStream := TFileStream.Create(FileName, fmCreate);
+  Computer.CassetteDrive.LoadTape(FTapeStream);
+  FComputer.CassetteDrive.Record_;
+end;
+
 function TApp.HandleBootstrap(const Cpu: TCpu8088): Boolean;
 var
   I: Integer;
@@ -726,7 +781,7 @@ const
   CodeFontSize = 48;
   VertSpacing = 1;
 begin
-  Left := GetRenderWidth - 360;
+  Left := 0;
   Color := ColorAlpha(YELLOW, 0.9);
 
   DrawTextEx(
@@ -877,7 +932,7 @@ begin
       DrawTextEx(
         Font,
         PChar(Format('%.5x | %s', [Listing[I].Address, Listing[I].Contents])),
-        Vector2Create(Left - 800, I * (FontSize + 8) + 120), CodeFontSize, 1,
+        Vector2Create(Left + 400, I * (FontSize + 8) + 120), CodeFontSize, 1,
         specialize IfThen<TColorB>(Listing[I].Address = Addr, YELLOW, GRAY));
   end;
 end;
@@ -974,6 +1029,7 @@ begin
   end;
 end;
 
+{
 procedure TApp.HandleLoadFromBinaryTape(ACpu: TCpu8088);
 var
   Segment, Offset, BytesToRead: Word;
@@ -1015,11 +1071,7 @@ begin
   ACpu.Registers.DX := ACpu.Registers.CX;
   ACPu.Registers.Flags.CF := False;
 end;
-
-procedure TApp.HandleLoadFromWavTape;
-begin
-
-end;
+}
 
 procedure TApp.UpdateKeyboard(AKeyboard: TKeyboard);
 var
@@ -1048,40 +1100,17 @@ begin
     }
     $10:
       begin
-        if Cpu.Registers.AH = $0E then
-        begin
-          // Writeln('Print char: ', Cpu.Registers.AL);
-        end;
-        {
-        Writeln(Format('INT %.x :: %.4X %.4X :: AH:%.2x AL:%.2x', [
-          ANumber,
-          Cpu.Registers.CS, Cpu.Registers.IP,
-          Cpu.Registers.AH, Cpu.Registers.AL
-        ]));
-        //if Cpu.Registers.AH = $0E then Writeln('Prints');
-        }
+        { BIOS Video function }
       end;
 
     $15:
-      case Cpu.Registers.AH of
-        2:
-          begin
-            FComputer.CassetteDrive.Play;
-            Result := False;
-          end
-          {
-            if LowerCase(ExtractFileExt(CassetteImage)) = '.wav' then
-            begin
-              FComputer.CassetteDrive.Play;
-              Result := False;
-            end else
-            begin
-              HandleLoadFromBinaryTape(Cpu);
-              Result := True;
-            end;
-          end;
-          }
-      else;
+      begin
+        case Cpu.Registers.AH of
+          1: Computer.CassetteDrive.Stop;
+          2: HandleReadFromTape;
+          3: HandleWriteToTape;
+        else;
+        end;
       end;
 
     $19:
@@ -1116,7 +1145,6 @@ var
   Cpu: TCpu8088 absolute ASender;
   Res: TBinarySearchResult;
   BreakAddr: TPhysicalAddress;
-
 begin
   Result := False;
   if FStepByStep then
