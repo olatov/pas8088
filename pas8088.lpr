@@ -25,7 +25,7 @@ const
 
   DBG = False;
 
-  FontFile = 'LiberationMono-Regular.ttf';
+  FontFile = 'LiberationMono-Bold.ttf';
 
   RamAddress   = $00000;
   BiosAddress  = $FE000;
@@ -267,7 +267,7 @@ end;
 
 procedure TApp.Run;
 const
-  TapeFrequency = 11025;
+  TapeFrequency = 8000;
 var
   Computer: TMachine;
   ScanlineShader, GrayscaleShader, Shader: TShader;
@@ -472,7 +472,8 @@ begin
         else
           ResumeAudioStream(SpeakerStream);
       end;
-    end;
+    end else
+      UpdateKeyboard(FKeyboard);
 
     GrayscaleEnabled := IfThen(Settings.Video.Grayscale, 1, 0);
     ScanlinesEnabled := IfThen(Settings.Video.ScanLines, 1, 0);
@@ -486,8 +487,6 @@ begin
       @ScanlinesEnabled, SHADER_UNIFORM_INT);
 
     Inc(FFrames);
-
-    UpdateKeyboard(FKeyboard);
 
     if FStepByStep and (PrevTicks <> Computer.Cpu.Ticks) then
       LoadBytesToDebugger(Computer.MemoryBus, Computer.Cpu.CurrentAddress);
@@ -1140,7 +1139,7 @@ var
   Crc: Word;
 begin
   if not Assigned(FDumpStream) then Exit;
-  //if AInstruction.CS = $F000 then Exit;
+  if AInstruction.CS = $F000 then Exit;
 
   DumpFrame := BuldDumpFrame(Cpu, (AInstruction.CS shl 4) + AInstruction.IP);
   DumpFrame.CS := AInstruction.CS;
