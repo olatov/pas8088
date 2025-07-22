@@ -547,7 +547,7 @@ type
     property OnAfterExecution: TInstructionNotifyEvent read FOnAfterExecution write FOnAfterExecution;
     property InterruptHook: TInteruptHook read FInterruptHook write SetInterruptHook;
     procedure RaiseNmi;
-    procedure RaiseHardwareInterrupt(ANumber: Byte);
+    function RaiseHardwareInterrupt(ANumber: Byte): Boolean;
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
     procedure Reset;
@@ -1556,10 +1556,14 @@ begin
   end;
 end;
 
-procedure TCpu8088.RaiseHardwareInterrupt(ANumber: Byte);
+function TCpu8088.RaiseHardwareInterrupt(ANumber: Byte): Boolean;
 begin
+  Result := False;
+  if (not Registers.Flags.IF_) or Registers.Flags.TF then Exit;
+
   FHardwareInterrupt.Pending := True;
   FHardwareInterrupt.Number := ANumber;
+  Result := True;
 end;
 
 procedure TCpu8088.RaiseNmi;
@@ -1579,6 +1583,8 @@ begin
 
   FCurrentInstruction.Code[FCurrentInstruction.Length] := Result;
   Inc(FCurrentInstruction.Length);
+  if FCurrentInstruction.Length > Length(FCurrentInstruction.Code) then
+    raise Exception.Create('Instruction too long');
 end;
 
 function TCpu8088.FetchCodeWord: Word;
@@ -1690,36 +1696,9 @@ begin
   IOBus.InvokeWrite(Self, AAddress, AData);
 end;
 
-{$J+}
 function TCpu8088.ReadIOByte(AAddress: Word): Byte;
-const
-  C68: Integer = 0;
-  C28: Integer = 0;
-var
-  Dat68: array of Byte = (192, 200, 40);
-  Dat28: array of Byte = (0, 0, 0, 255);
 begin
   IOBus.InvokeRead(Self, AAddress, Result);
-  Exit;
-  //Exit($FF);
-  Result := $FF;
-
-
-  case AAddress of
-    $28:
-      begin
-        Result := Dat68[C68 mod Length(Dat68)];
-        Inc(C68);
-      end;
-
-    $68:
-      begin
-        Result := Dat28[C28 mod Length(Dat28)];
-        Inc(C28);
-      end;
-  end;
-
-  //if AAddress = $68 then Result := 192;
 end;
 
 function TCpu8088.OnIORead(ADevice: IIOBusDevice; AAddress: Word; out

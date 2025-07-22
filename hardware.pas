@@ -17,7 +17,7 @@ type
   ICpu = interface
     procedure Tick;
     procedure RaiseNmi;
-    procedure RaiseHardwareInterrupt(ANumber: Byte);
+    function RaiseHardwareInterrupt(ANumber: Byte): Boolean; { True if acknowledged }
   end;
 
   IMemoryBus = interface
@@ -67,6 +67,13 @@ type
     ['{7F4DA08F-DA98-4F0A-B45B-B40A53304387}']
     procedure AttachCpu(ACpu: ICpu);
     procedure RaiseNmi;
+  end;
+
+  IInterruptController = interface(IIOBusDevice)
+    ['{6DC53945-9F2B-4758-9324-B6B6040ADEF6}']
+    procedure AttachCpu(ACpu: ICpu);
+    procedure RaiseIrq(ANumber: Byte);
+    procedure Tick;
   end;
 
 implementation

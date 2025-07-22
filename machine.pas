@@ -16,6 +16,7 @@ type
   private
     FCassetteDrive: TCassetteDrive;
     FCpu: TCpu8088;
+    FInterrptController: IInterruptController;
     FIOBus: IIOBus;
     FMemoryBus: IMemoryBus;
     FVideo: TVideoController;
@@ -23,25 +24,23 @@ type
     FMemory: specialize TArray<IMemoryBusDevice>;
     procedure SetCassetteDrive(AValue: TCassetteDrive);
     procedure SetCpu(AValue: TCpu8088);
+    procedure SetInterrptController(AValue: IInterruptController);
     procedure SetIOBus(AValue: IIOBus);
     procedure SetMemoryBus(AValue: IMemoryBus);
+    procedure OnTimerOutputChange(ASender: TObject; AChannel: Integer; AValue: Boolean);
   published
     property Cpu: TCpu8088 read FCpu write SetCpu;
     property MemoryBus: IMemoryBus read FMemoryBus write SetMemoryBus;
     property IOBus: IIOBus read FIOBus write SetIOBus;
-    property Video: TVideoController read FVideo;
-    property Timer: TPit8253 read FTimer;
+    property Video: TVideoController read FVideo write FVideo;
+    property Timer: TPit8253 read FTimer write FTimer;
+    property InterrptController: IInterruptController read FInterrptController write SetInterrptController;
     property CassetteDrive: TCassetteDrive read FCassetteDrive write SetCassetteDrive;
     procedure Tick;
     procedure Run(ATicks: Integer=1000);
     procedure Reset;
     procedure Initialize;
-    procedure InstallCpu(ACpu: TCpu8088);
-    procedure InstallMemoryBus(AMemoryBus: IMemoryBus);
-    procedure InstallIOBus(AIOBus: IIOBus);
-    procedure InstallMemory(AMemory: IMemoryBusDevice);
-    procedure InstallVideo(AVideo: TVideoController);
-    procedure InstallTimer(ATimer: TPit8253);
+    procedure AddMemory(AMemory: IMemoryBusDevice);
   end;
 
 implementation
@@ -52,6 +51,12 @@ procedure TMachine.SetCpu(AValue: TCpu8088);
 begin
   if FCpu = AValue then Exit;
   FCpu := AValue;
+end;
+
+procedure TMachine.SetInterrptController(AValue: IInterruptController);
+begin
+  if FInterrptController = AValue then Exit;
+  FInterrptController := AValue;
 end;
 
 procedure TMachine.SetCassetteDrive(AValue: TCassetteDrive);
@@ -72,11 +77,24 @@ begin
   FMemoryBus := AValue;
 end;
 
+procedure TMachine.OnTimerOutputChange(
+  ASender: TObject; AChannel: Integer; AValue: Boolean);
+begin
+  if not AValue then Exit;
+
+  case AChannel of
+    0: InterrptController.RaiseIrq(0);
+    1: InterrptController.RaiseIrq(6);
+  else;
+  end;
+end;
+
 procedure TMachine.Tick;
 begin
+  if Assigned(InterrptController) then InterrptController.Tick;
   Cpu.Tick;
-  Timer.Tick;
-  Video.Tick;
+  if Assigned(Timer) then Timer.Tick;
+  if Assigned(Video) then Video.Tick;
 
   case CassetteDrive.State of
     csPlaying: Timer.TapeIn := CassetteDrive.TapeIn;
@@ -122,6 +140,12 @@ begin
   IOBus.AttachDevice(Cpu);
   MemoryBus.AttachDevice(Cpu);
 
+  if Assigned(InterrptController) then
+  begin
+    IOBus.AttachDevice(InterrptController);
+    InterrptController.AttachCpu(Cpu);
+  end;
+
   if Assigned(FVideo) then
   begin
     MemoryBus.AttachDevice(FVideo);
@@ -132,6 +156,9 @@ begin
   begin
     { Todo: wire through a i8259 }
     IOBus.AttachDevice(FTimer);
+
+    if Assigned(InterrptController) then
+      FTimer.OnChannelOutputChange := @OnTimerOutputChange;
   end;
 
   if Assigned(FCassetteDrive) then
@@ -143,34 +170,9 @@ begin
   Cpu.Reset;
 end;
 
-procedure TMachine.InstallCpu(ACpu: TCpu8088);
-begin
-  Cpu := ACpu;
-end;
-
-procedure TMachine.InstallMemoryBus(AMemoryBus: IMemoryBus);
-begin
-  MemoryBus := AMemoryBus;
-end;
-
-procedure TMachine.InstallIOBus(AIOBus: IIOBus);
-begin
-  IOBus := AIOBus;
-end;
-
-procedure TMachine.InstallMemory(AMemory: IMemoryBusDevice);
+procedure TMachine.AddMemory(AMemory: IMemoryBusDevice);
 begin
   Insert(AMemory, FMemory, Integer.MaxValue);
-end;
-
-procedure TMachine.InstallVideo(AVideo: TVideoController);
-begin
-  FVideo := AVideo;
-end;
-
-procedure TMachine.InstallTimer(ATimer: TPit8253);
-begin
-  FTimer := ATimer;
 end;
 
 end.

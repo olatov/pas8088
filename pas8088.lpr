@@ -27,12 +27,13 @@ const
 
   DBG = False;
 
-  FontFile = 'LiberationMono-Bold.ttf';
-
   RamAddress   = $00000;
   BiosAddress  = $FE000;
   VideoAddress = $B8000;
+  CartAddress  = $C0000;
 
+  DumpFile = '';
+  DumpBios = False;
 type
 
   { TRingBuffer }
@@ -53,7 +54,6 @@ type
 
   TApplication = class(TCustomApplication)
   private
-    DumpFile: String;
     FFont: TFont;
     FGfxShader: TShader;
     FSpeakerStream: TAudioStream;
@@ -110,9 +110,8 @@ type
     procedure PrintOsd(AText: String; AColor: TColorB);
     procedure PrintOsd(AText: String);
     function InterruptHook(ASender: TObject; ANumber: Byte): Boolean;
-    procedure TimerOutputChange(ASender: TObject; AChannel: Integer; AValue: Boolean);
-    function OnBeforeInstruction(ASender: TObject; AAddress: TPhysicalAddress
-      ): Boolean;
+    function OnBeforeInstruction(
+      ASender: TObject; AAddress: TPhysicalAddress): Boolean;
     procedure OnAfterInstruction(ASender: TObject; AInstruction: TInstruction);
   end;
 
@@ -150,39 +149,41 @@ end;
 function TApplication.BuildMachine: TMachine;
 var
   BiosRomBlock: TRomMemoryBlock;
-  Ram, VideoRam: TRamMemoryBlock;
-  NmiTrigger: TNmiTrigger;
+  SystemRam, VideoRam: TRamMemoryBlock;
   CartRomBlock: TRomMemoryBlock;
 begin
   Result := TMachine.Create(Nil);
 
   { Cpu }
-  Result.InstallCpu(TCpu8088.Create(Result));
+  Result.Cpu := TCpu8088.Create(Result);
 
   { I/O }
-  Result.InstallIOBus(TIOBus.Create(Result));
+  Result.IOBus := TIOBus.Create(Result);
+
+  { Interrupt controller }
+  Result.InterrptController := TPic8259.Create(Result, 8);
 
   { Timer }
-  Result.InstallTimer(TPit8253.Create(Result, Settings.Machine.ClockSpeed));
+  Result.Timer := TPit8253.Create(Result, Settings.Machine.ClockSpeed);
 
-  { RAM / ROM }
-  Result.InstallMemoryBus(TMemoryBus.Create(Result));
+  { SystemRam / ROM }
+  Result.MemoryBus := TMemoryBus.Create(Result);
 
-  { System RAM = Total - 32 KB video }
-  Ram := TRamMemoryBlock.Create(Result, 1024 * (Settings.Machine.Ram - 32), RamAddress);
-  Result.InstallMemory(Ram);
+  { System SystemRam = Total - 32 KB video }
+  SystemRam := TRamMemoryBlock.Create(Result, 1024 * (Settings.Machine.Ram - 32), RamAddress);
+  Result.AddMemory(SystemRam);
 
   BiosRomBlock := TRomMemoryBlock.Create(Result, 1024 * 8, BiosAddress);
-  Result.InstallMemory(BiosRomBlock);
+  Result.AddMemory(BiosRomBlock);
 
   VideoRam := TRamMemoryBlock.Create(Result, 1024 * 32, VideoAddress);
-  Result.InstallMemory(VideoRam);
+  Result.AddMemory(VideoRam);
 
   { Video }
-  Result.InstallVideo(
-    TVideoController.Create(Result, Settings.Machine.ClockSpeed div FPS));
-  NmiTrigger := TNmiTrigger.Create(Result);
-  Result.Video.NmiTrigger := NmiTrigger;
+  Result.Video := TVideoController.Create(
+    Result, Settings.Machine.ClockSpeed div FPS);
+
+  Result.Video.NmiTrigger := TNmiTrigger.Create(Result);
   Result.Video.NmiTrigger.AttachCpu(Result.Cpu);
 
   { Keyboard }
@@ -194,8 +195,9 @@ begin
 
   if Assigned(FCartridgeStream) then
   begin
-    CartRomBlock := TRomMemoryBlock.Create(Result, 1024 * 64, $C0000);
-    Result.InstallMemory(CartRomBlock);
+    CartRomBlock := TRomMemoryBlock.Create(
+      Result, FCartridgeStream.Size, CartAddress);
+    Result.AddMemory(CartRomBlock);
     try
       CartRomBlock.LoadFromStream(FCartridgeStream);
     finally
@@ -437,7 +439,6 @@ begin
   Computer.Cpu.OnBeforeInstruction := @OnBeforeInstruction;
   Computer.Cpu.OnAfterInstruction := @OnAfterInstruction;
   Computer.Cpu.OnBeforeExecution := @OnBeforeExecution;
-  Computer.Timer.OnChannelOutputChange := @TimerOutputChange;
 
   LinesLoc := GetShaderLocation(GfxShader, 'lines');
   SetShaderValue(GfxShader, LinesLoc, @LinesCount, SHADER_UNIFORM_FLOAT);
@@ -1168,23 +1169,6 @@ begin
   end;
 end;
 
-procedure TApplication.TimerOutputChange(ASender: TObject; AChannel: Integer;
-  AValue: Boolean);
-begin
-  {
-    Todo: Suppress h/w interrupts for a few secs during a warm reset
-    because an interrupt firing too early (before the IVT is initialized)
-    can break the execution. Review after i8259 is available.
-  }
-  if (FComputer.Cpu.Ticks < 1000000) and (FFrames > 50) then Exit;
-
-  case AChannel of
-    0: if AValue then FComputer.Cpu.RaiseHardwareInterrupt($08);
-    1: if AValue then FComputer.Cpu.RaiseHardwareInterrupt($0E);
-  else;
-  end;
-end;
-
 function TApplication.OnBeforeInstruction(ASender: TObject; AAddress: TPhysicalAddress): Boolean;
 var
   Cpu: TCpu8088 absolute ASender;
@@ -1222,7 +1206,7 @@ var
   Crc: Word;
 begin
   if not Assigned(FDumpStream) then Exit;
-  if AInstruction.CS = $F000 then Exit;
+  if not DumpBios and (AInstruction.CS = $F000) then Exit;
 
   DumpFrame := BuldDumpFrame(Cpu, (AInstruction.CS shl 4) + AInstruction.IP);
   DumpFrame.CS := AInstruction.CS;
@@ -1237,6 +1221,14 @@ var
   Frame: TDumpFrame;
   Cpu: TCpu8088 absolute ASender;
 begin
+{
+  if (Cpu.Registers.AX = 63435) then
+    WriteLn(Format('%.4x:%.4x !!!',
+    [
+      AInstruction.CS, AInstruction.IP
+    ]));
+}
+
   //if (AInstruction.CS = $070) then FStepByStep := True;
   if (AInstruction.CS = $F000) then Exit;
   //if (AInstruction.CS = $70) then FDebug := True;
