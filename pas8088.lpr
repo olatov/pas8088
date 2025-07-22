@@ -375,6 +375,7 @@ begin
           try
             TMemoryStream(FBinStream).LoadFromFile(Option);
             FWorkingFileName := Option;
+            PrintOsd('[BIN] ' + FWorkingFileName);
           except
             on E: Exception do
             begin
