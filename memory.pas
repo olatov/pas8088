@@ -187,6 +187,9 @@ procedure TMemoryBus.InvokeWrite(
 var
   Device: IMemoryBusDevice;
 begin
+  if not InRange(AAddress, Low(TPhysicalAddress), High(TPhysicalAddress)) then
+    raise Exception.CreateFmt('Address out of range: %.x', [AAddress]);
+
   for Device in FDevices do
     if (Device <> ADevice) then Device.OnMemoryWrite(ADevice, AAddress, AData);
 end;
@@ -196,6 +199,9 @@ procedure TMemoryBus.InvokeRead(
 var
   Device: IMemoryBusDevice;
 begin
+  if not InRange(AAddress, Low(TPhysicalAddress), High(TPhysicalAddress)) then
+    raise Exception.CreateFmt('Address out of range: %.x', [AAddress]);
+
   for Device in FDevices do
     if (Device <> ADevice)
         and Device.OnMemoryRead(ADevice, AAddress, AData) then Exit;
