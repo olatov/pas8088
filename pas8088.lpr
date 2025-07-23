@@ -752,11 +752,12 @@ begin
           Vector2Create(0, 0), 48, 0,
           ColorAlpha(FOsdText.Color, Min(FOsdText.Lifetime / FPS, 1)));
       end;
-
+      {
       DrawTextEx(Font,
         PChar(Format('Audio buf: %.0f', [AudioBuffer.FilledPercentage * 100])),
         Vector2Create(500, 0),
         24, 0, YELLOW);
+      }
 
       if FStepByStep then
         RenderDebugger(Computer.Cpu);
