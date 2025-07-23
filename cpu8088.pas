@@ -4747,7 +4747,7 @@ begin
   until False;
 
   FCurrentInstruction.Repeating := FCurrentInstruction.Repetition <> repNone;
-  if (FCurrentInstruction.Repetition = repRep) and (Data in [$A7, $A8, $AE, $AF]) then
+  if (FCurrentInstruction.Repetition = repRep) and (Data in [$A6, $A7, $AE, $AF]) then
     { CMPS and SCAS only }
     FCurrentInstruction.Repetition := repRepE;
 end;

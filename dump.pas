@@ -23,13 +23,19 @@ type
     CS, DS, SS, ES, IP, Flags: Word;
   end;
 
-  function BuldDumpFrame(ACpu: TCpu8088; AAddr: TPhysicalAddress): TDumpFrame;
+  function BuildDumpFrame(ACpu: TCpu8088; AAddr: TPhysicalAddress): TDumpFrame;
+  function BuildDumpFrame(ACpu: TCpu8088; ASegment, AOffset: Word): TDumpFrame; overload;
   function GetCrc(ADataFrame: TDumpFrame): Word;
   function CompareFrames(AFirst, ASecond: TDumpFrame; out Errors: TStringArray): Boolean;
 
 implementation
 
-function BuldDumpFrame(ACpu: TCpu8088; AAddr: TPhysicalAddress): TDumpFrame;
+function BuildDumpFrame(ACpu: TCpu8088; ASegment, AOffset: Word): TDumpFrame;
+begin
+  Result := BuildDumpFrame(ACpu, GetPhysicalAddress(ASegment, AOffset));
+end;
+
+function BuildDumpFrame(ACpu: TCpu8088; AAddr: TPhysicalAddress): TDumpFrame;
 var
   I: Integer;
   DataByte: Byte;
