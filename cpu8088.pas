@@ -19,7 +19,7 @@ type
     Lock: Boolean;
     Repetition: (repNone, repRep, repRepE, repRepNE);
     SegmentOverride: (soNone, soCS, soDS, soES, soSS);
-    Code: array[0..5] of Byte;
+    Code: array[0..7] of Byte;
     Length: Byte;
     Repeating: Boolean;
   end;
@@ -579,10 +579,13 @@ type
 implementation
 
 function GetPhysicalAddress(ASegment, AOffset: Word): TPhysicalAddress;
+var
+  Addr: LongInt;
 begin
-  Result := ((ASegment shl 4) + AOffset);
-  while Result > High(TPhysicalAddress) do
-    Dec(Result, High(TPhysicalAddress) + 1);
+  Addr := ((ASegment shl 4) + AOffset);
+  if Addr > High(TPhysicalAddress) then
+    Addr := Addr mod (High(TPhysicalAddress) + 1);
+  Result := Addr;
 end;
 
 { TFlagRegister }
@@ -1496,7 +1499,7 @@ end;
 
 function TCpu8088.GetCurrentAddress: TPhysicalAddress;
 begin
-  Result := (Registers.CS shl 4) + (Registers.IP);
+  Result := GetPhysicalAddress(Registers.CS, Registers.IP);
 end;
 
 procedure TCpu8088.SetInterruptHook(AValue: TInteruptHook);
@@ -1583,6 +1586,7 @@ begin
 
   FCurrentInstruction.Code[FCurrentInstruction.Length] := Result;
   Inc(FCurrentInstruction.Length);
+
   if FCurrentInstruction.Length > Length(FCurrentInstruction.Code) then
     raise Exception.Create('Instruction too long');
 end;
@@ -1751,32 +1755,24 @@ end;
 
 function TCpu8088.ReadMemoryByte(ASegment, AOffset: Word): Byte;
 begin
-  Result := ReadMemoryByte((ASegment shl 4) + AOffset);
+  Result := ReadMemoryByte(GetPhysicalAddress(ASegment, AOffset));
 end;
 
 function TCpu8088.ReadMemoryWord(ASegment, AOffset: Word): Word;
-var
-  Offset: Word;
 begin
-  Offset := AOffset;
-  Result := ReadMemoryByte((ASegment shl 4) + Offset);
-  Inc(Offset);
-  Result := Result or (ReadMemoryByte((ASegment shl 4) + Offset) shl 8);
+  Result := ReadMemoryByte(ASegment, AOffset);
+  Result := Result or (ReadMemoryByte(ASegment, Word(AOffset + 1)) shl 8);
 end;
 
 procedure TCpu8088.WriteMemoryByte(ASegment, AOffset: Word; AData: Byte);
 begin
-  WriteMemoryByte((ASegment shl 4) + AOffset, AData);
+  WriteMemoryByte(GetPhysicalAddress(ASegment, AOffset), AData);
 end;
 
 procedure TCpu8088.WriteMemoryWord(ASegment, AOffset: Word; AData: Word);
-var
-  Offset: Word;
 begin
-  Offset := AOffset;
-  WriteMemoryByte((ASegment shl 4) + Offset, Lo(AData));
-  Inc(Offset);
-  WriteMemoryByte((ASegment shl 4) + Offset, Hi(AData));
+  WriteMemoryByte(GetPhysicalAddress(ASegment, AOffset), Lo(AData));
+  WriteMemoryByte(GetPhysicalAddress(ASegment, Word(AOffset + 1)), Hi(AData));
 end;
 
 procedure TCpu8088.Push(AValue: Word);
