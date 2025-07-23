@@ -121,27 +121,25 @@ begin
           State := csStopped;
         end;
 
-        if ActualCount > 0 then
-          case FWavReader.fmt.BitsPerSample of
-             8:
-              begin
-                Assert(ActualCount > 2);
-                Sample := Buffer[(ActualCount div 2) + 1];
-                FTapeIn := Sample > 127;
-              end;
+        case FWavReader.fmt.BitsPerSample of
+          8:
+            if ActualCount >= 1 then
+            begin
+              Sample := Buffer[1];
+              FTapeIn := Sample > 127; { assume unsigned 8-bit }
+            end;
 
-            16:
-              begin
-                Assert(ActualCount > 3);
-                Sample := Buffer[(ActualCount div 2) + 1];
-                Sample := Int16(Sample or (Buffer[(ActualCount div 2) + 1] shl 8));
-                FTapeIn := Sample > 0;
-              end;
-          else
-            raise Exception.CreateFmt(
-              '%d-bit samples are not currently supported',
-              [FWavReader.fmt.BitsPerSample]);
-          end;
+          16:
+            if ActualCount >= 2 then
+            begin
+              Sample := Int16(Buffer[1] or (Buffer[2] shl 8));
+              FTapeIn := Sample > 0; { assume signed 16-bit }
+            end;
+        else
+          raise Exception.CreateFmt(
+            '%d-bit samples are not currently supported',
+            [FWavReader.fmt.BitsPerSample]);
+        end;
       end;
 
     csRecording:
