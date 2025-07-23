@@ -9,7 +9,7 @@ program pas8088;
 
 uses
   {$IFDEF UNIX}
-  //CThreads,
+  CThreads,
   {$ENDIF}
   {$IfDef MSWINDOWS}
   Windows,
@@ -39,8 +39,14 @@ type
   { TRingBuffer }
 
   TRingBuffer = class
-    Data: array[0..((44100 div 5) - 1)] of Byte;
+  private
+    function GetFilledPercentage: Double;
+    function GetSamplesAvailable: Integer;
+  public
+    Samples: array[0..((44100 div 4) - 1)] of Byte;
     ReadIndex, WriteIndex: Integer;
+    property SamplesAvailable: Integer read GetSamplesAvailable;
+    property FilledPercentage: Double read GetFilledPercentage;
     procedure Write(AValue: Byte);
     function Read(AFallback: Byte = 0): Byte;
   end;
@@ -56,6 +62,7 @@ type
   private
     FFont: TFont;
     FGfxShader: TShader;
+    FPaused: Boolean;
     FSpeakerStream: TAudioStream;
     procedure DumpMemory(AFileName: String; AMemoryBus: IMemoryBus;
       AAddress: TPhysicalAddress; ALength: Integer);
@@ -66,6 +73,7 @@ type
       const AFileType: String): TFont;
     function LoadFragmentShaderFromResource(const AResourceName: String): TShader;
     procedure OnBeforeExecution(ASender: TObject; AInstruction: TInstruction);
+    procedure SetPaused(AValue: Boolean);
   public
     type
       TKeyboardMap = specialize TDictionary<TKeyboard.TKey, specialize TArray<RayLib.TKeyboardKey>>;
@@ -85,7 +93,7 @@ type
     FKeyboard: TKeyboard;
     FBiosRomStream, FTapeStream, FBinStream, FCartridgeStream: TStream;
     FComputer: TMachine;
-    FAudioCount: Integer;
+    FLastAudioSampleTime: Double;
     FOsdText: record
       Text: String;
       Color: TColorB;
@@ -95,6 +103,7 @@ type
     property GfxShader: TShader read FGfxShader write FGfxShader;
     property SpeakerAudioStream: TAudioStream read FSpeakerStream write FSpeakerStream;
     property Computer: TMachine read FComputer write FComputer;
+    property Paused: Boolean read FPaused write SetPaused;
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
     procedure Initialize; override;
@@ -124,14 +133,14 @@ var
   NewIndex: Integer;
 begin
   NewIndex := WriteIndex + 1;
-  if NewIndex > High(Data) then NewIndex := 0;
+  if NewIndex > High(Samples) then NewIndex := 0;
   if NewIndex = ReadIndex then
   begin
     //Writeln('Buffer full');
     Exit;
   end;
 
-  Data[WriteIndex] := AValue;
+  Samples[WriteIndex] := AValue;
   WriteIndex := NewIndex;
 end;
 
@@ -141,9 +150,26 @@ begin
     { Buffer is empty }
     Exit(AFallback);
 
-  Result := Data[ReadIndex];
+  Result := Samples[ReadIndex];
   Inc(ReadIndex);
-  if ReadIndex > High(Data) then ReadIndex := 0;
+  if ReadIndex > High(Samples) then ReadIndex := 0;
+end;
+
+function TRingBuffer.GetFilledPercentage: Double;
+begin
+  Result := SamplesAvailable / Length(Samples);
+end;
+
+function TRingBuffer.GetSamplesAvailable: Integer;
+var
+  Delta: Integer;
+begin
+  Delta := Abs(ReadIndex - WriteIndex);
+  case CompareValue(ReadIndex, WriteIndex) of
+    -1: Result := Delta;
+     0: Result := 0;
+     1: Result := Length(Samples) - Delta;
+  end;
 end;
 
 function TApplication.BuildMachine: TMachine;
@@ -404,6 +430,8 @@ var
   CyclesPerCassetteSample: Integer;
   TapeDelta: Double;
   WaitStates, InitialWaitStates: Integer;
+  VirtualTime, TimePerCycle, BaseTimePerSpeakerSample, TimePerSpeakerSample: Double;
+  AudioTimeAdjustment: Double;
 
   procedure LoadBytesToDebugger(AMemoryBus: IMemoryBus; AAddress: TPhysicalAddress);
   var
@@ -435,6 +463,13 @@ var
 
 begin
   FDebug := DBG;
+
+  VirtualTime := 0;
+  TimePerCycle := 1 / Settings.Machine.ClockSpeed;
+  TimePerSpeakerSample := 1 / SpeakerSampleRate;
+  BaseTimePerSpeakerSample := TimePerSpeakerSample;
+
+  AudioTimeAdjustment := 1;
 
   Computer.Cpu.InterruptHook := @InterruptHook;
   Computer.Cpu.OnBeforeInstruction := @OnBeforeInstruction;
@@ -525,6 +560,8 @@ begin
         Settings.Window.AspectRatio := IfThen(IsZero(Settings.Window.AspectRatio), 4/3, 0);
       if IsKeyPressed(KEY_F) then ToggleFullscreen;
 
+      if IsKeyPressed(KEY_P) then Paused := not Paused;
+
       if IsKeyPressed(KEY_NINE) or IsKeyPressedRepeat(KEY_NINE) then
       begin
         Settings.Audio.Volume := Settings.Audio.Volume - 0.05;
@@ -573,11 +610,23 @@ begin
 
     PrevTicks := Computer.Cpu.Ticks;
 
-    for I := 0 to Computer.Timer.Speaker.SampleCount - 1 do
-      AudioBuffer.Write(Computer.Timer.Speaker.Samples[I]);
+    if AudioBuffer.FilledPercentage < 0.01 then
+    begin
+      while AudioBuffer.FilledPercentage < 0.2 do AudioBuffer.Write(0);
+      AudioTimeAdjustment := AudioTimeAdjustment * 0.9965;
+    end else
+    if AudioBuffer.FilledPercentage > 0.99 then
+    begin
+      while AudioBuffer.FilledPercentage > 0.4 do AudioBuffer.Read;
+      AudioTimeAdjustment := AudioTimeAdjustment / 0.996;
+    end;
+
+    TimePerSpeakerSample := EnsureRange(
+      BaseTimePerSpeakerSample * AudioTimeAdjustment,
+      BaseTimePerSpeakerSample * 0.5,
+      BaseTimePerSpeakerSample * 2.0);
 
     Computer.Video.BeginFrame;
-    Computer.Timer.Speaker.BeginAudioChunk;
 
     if Computer.CassetteDrive.State in [csPlaying, csRecording] then
     begin
@@ -593,26 +642,31 @@ begin
     end;
 
     try
-      if (not FStepByStep) or (Computer.Cpu.Registers.CS >= $F000) then
+      if not Paused and ((not FStepByStep) or (Computer.Cpu.Registers.CS >= $F000)) then
       begin
         Computer.Cpu.WaitStates := InitialWaitStates;
         for I := 0 to CyclesPerFrame - 1 do
         begin
+          VirtualTime := VirtualTime + TimePerCycle;
+
           Computer.Tick;
           if Computer.Cpu.WaitStates <= 0 then Computer.Cpu.WaitStates := WaitStates;
 
           if FStepByStep then Break;
 
-          if (Computer.Cpu.Ticks mod CyclesPerSpeakerSample) = 0 then
-            { Time to play a sample from tape noise }
+          if (VirtualTime - FLastAudioSampleTime) >= TimePerSpeakerSample then
+          begin
             case Computer.CassetteDrive.State of
               csPlaying:
-                Computer.Timer.Speaker.CaptureSample(Computer.CassetteDrive.TapeIn, 0.4);
+                AudioBuffer.Write(IfThen(Computer.CassetteDrive.TapeIn, 63));
+
               csRecording:
-                Computer.Timer.Speaker.CaptureSample(Computer.CassetteDrive.TapeOut, 0.4);
+                AudioBuffer.Write(IfThen(Computer.CassetteDrive.TapeOut, 63));
             else
-              Computer.Timer.Speaker.CaptureSample;
+              AudioBuffer.Write(IfThen(Computer.Timer.Speaker.Output, 0, 255));
             end;
+            FLastAudioSampleTime := VirtualTime;
+          end;
 
           if (Computer.CassetteDrive.State in [csPlaying, csRecording]) and
               ((Computer.Cpu.Ticks mod CyclesPerCassetteSample) = 0) then
@@ -698,6 +752,11 @@ begin
           Vector2Create(0, 0), 48, 0,
           ColorAlpha(FOsdText.Color, Min(FOsdText.Lifetime / FPS, 1)));
       end;
+
+      DrawTextEx(Font,
+        PChar(Format('Audio buf: %.0f', [AudioBuffer.FilledPercentage * 100])),
+        Vector2Create(500, 0),
+        24, 0, YELLOW);
 
       if FStepByStep then
         RenderDebugger(Computer.Cpu);
@@ -900,10 +959,10 @@ begin
 
   for I := 0 to 12 do
   begin
-    Addr := (ACpu.Registers.SS shl 4) + Word(ACpu.Registers.SP + (2 * I));
+    Addr := GetPhysicalAddress(ACpu.Registers.SS, Word(ACpu.Registers.SP + (2 * I)));
     ACpu.MemoryBus.InvokeRead(Nil, Addr, DataByte);
     DataWord := DataByte;
-    Addr := (ACpu.Registers.SS shl 4) + Word(ACpu.Registers.SP + (2 * I) + 1);
+    Addr := GetPhysicalAddress(ACpu.Registers.SS, Word(ACpu.Registers.SP + (2 * I) + 1));
     ACpu.MemoryBus.InvokeRead(Nil, Addr, DataByte);
     DataWord := DataWord or (DataByte shl 8);
 
@@ -1109,7 +1168,7 @@ begin
     Data := FTapeStream.ReadByte;
     if Counter > ACpu.Registers.CX then Continue;
 
-    Addr := (ACpu.Registers.ES shl 4) + Offset;
+    Addr := GetPhysicalAddress(ACpu.Registers.ES, Offset);
     ACpu.MemoryBus.InvokeWrite(ACpu, Addr, Data);
     Inc(Offset);
   end;
@@ -1209,10 +1268,14 @@ begin
   if not Assigned(FDumpStream) then Exit;
   if not DumpBios and (AInstruction.CS = $F000) then Exit;
 
-  DumpFrame := BuldDumpFrame(Cpu, (AInstruction.CS shl 4) + AInstruction.IP);
-  DumpFrame.CS := AInstruction.CS;
-  DumpFrame.IP := AInstruction.IP;
+  DumpFrame := BuildDumpFrame(Cpu, AInstruction.CS, AInstruction.IP);
   FDumpStream.Write(DumpFrame, SizeOf(DumpFrame));
+end;
+
+procedure TApplication.SetPaused(AValue: Boolean);
+begin
+  if FPaused = AValue then Exit;
+  FPaused := AValue;
 end;
 
 procedure TApplication.OnAfterInstruction(ASender: TObject; AInstruction: TInstruction);
@@ -1273,7 +1336,7 @@ begin
 end;
 
 
-procedure AudioCallback(buffer: Pointer; Frames: LongWord); cdecl;
+procedure AudioCallback(Buffer: Pointer; Frames: LongWord); cdecl;
 var
   I: Integer;
   OutBuf: PByte;
