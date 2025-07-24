@@ -97,14 +97,8 @@ type
       private
         function GetOutput: Boolean;
       public
-        Samples: array[0..32767] of Byte;
-        SampleCount: Integer;
         GateInputs: array[1..2] of Boolean;
         property Output: Boolean read GetOutput;
-        procedure BeginAudioChunk;
-        procedure Tick;
-        procedure CaptureSample;
-        procedure CaptureSample(ASample: Boolean; AVolume: Double = 1);
       end;
   private
     FIOBus: IIOBus;
@@ -574,29 +568,6 @@ end;
 function TPit8253.TSpeaker.GetOutput: Boolean;
 begin
   Result := GateInputs[1] and GateInputs[2];
-end;
-
-procedure TPit8253.TSpeaker.BeginAudioChunk;
-begin
-  SampleCount := 0;
-end;
-
-procedure TPit8253.TSpeaker.Tick;
-begin
-
-end;
-
-procedure TPit8253.TSpeaker.CaptureSample;
-begin
-  CaptureSample(Output);
-end;
-
-procedure TPit8253.TSpeaker.CaptureSample(ASample: Boolean; AVolume: Double = 1);
-begin
-  if SampleCount >= Length(Samples) then Exit;
-
-  Samples[SampleCount] := 127 + Trunc(IfThen(ASample, 127, -127) * AVolume);
-  Inc(SampleCount);
 end;
 
 end.
