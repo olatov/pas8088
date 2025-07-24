@@ -17,7 +17,7 @@ uses
   Classes, SysUtils, StrUtils, Math, StreamEx, BufStream, Generics.Collections,
   CustApp, RayLib, RayMath,
   Cpu8088, Memory, IO, Machine, VideoController, Interrupts, Hardware, Debugger,
-  Keyboard, Dump, Timer, AppSettings, Cassette;
+  Keyboard, Dump, Timer, AppSettings, Cassette, FloppyDiskController;
 
 const
   FPS = 50;
@@ -27,13 +27,17 @@ const
 
   DBG = False;
 
-  RamAddress   = $00000;
-  BiosAddress  = $FE000;
-  VideoAddress = $B8000;
-  CartAddress  = $C0000;
+  RamAddress    = $00000;
+  BiosAddress   = $FE000;
+  VideoAddress  = $B8000;
+  CartAddress   = $C0000;
+  FdcRomAddress = $E0000;
 
   DumpFile = '';
   DumpBios = False;
+
+  DiskSectorSize = 512;
+
 type
 
   { TRingBuffer }
@@ -91,7 +95,9 @@ type
     FKeybEnabled: Boolean;
     FKeyboardMap: TKeyboardMap;
     FKeyboard: TKeyboard;
-    FBiosRomStream, FTapeStream, FBinStream, FCartridgeStream: TStream;
+    FBiosRomStream, FTapeStream, FBinStream,
+      FCartridgeStream: TStream;
+    FFloppyDiskStreams: specialize TArray<TStream>;
     FComputer: TMachine;
     FLastAudioSampleTime: Double;
     FOsdText: record
@@ -112,7 +118,7 @@ type
     procedure RenderDebugger(ACpu: TCpu8088);
     procedure BuildKeyboardMap;
     function HandleBootstrap(const Cpu: TCpu8088): Boolean;
-    { procedure HandleLoadFromBinaryTape(ACpu: TCpu8088); }
+    function HandleDiskIO: Boolean;
     procedure UpdateKeyboard(AKeyboard: TKeyboard);
     function BuildMachine: TMachine;
     procedure ToggleFullscreen;
@@ -174,9 +180,11 @@ end;
 
 function TApplication.BuildMachine: TMachine;
 var
-  BiosRomBlock: TRomMemoryBlock;
+  BiosRomBlock, FdcRomBlock: TRomMemoryBlock;
   SystemRam, VideoRam: TRamMemoryBlock;
   CartRomBlock: TRomMemoryBlock;
+  FFdcRomStream: TFileStream;
+  I: Integer;
 begin
   Result := TMachine.Create(Nil);
 
@@ -219,6 +227,7 @@ begin
   { Cassette drive }
   Result.CassetteDrive := TCassetteDrive.Create(Result);
 
+  { ROM cartridge disk }
   if Assigned(FCartridgeStream) then
   begin
     CartRomBlock := TRomMemoryBlock.Create(
@@ -229,6 +238,23 @@ begin
     finally
       FreeAndNil(FCartridgeStream);
     end;
+  end;
+
+  { Floppy disk }
+  if Length(FFloppyDiskStreams) > 0 then
+  begin
+    FFdcRomStream := TFileStream.Create('fdc_b504.bin', fmOpenRead);
+    try
+      FdcRomBlock := TRomMemoryBlock.Create(Result, FFdcRomStream.Size, FdcRomAddress);
+      FdcRomBlock.LoadFromStream(FFdcRomStream);
+      Result.AddMemory(FdcRomBlock);
+    finally
+      FreeAndNil(FFdcRomStream);
+    end;
+
+    Result.FloppyDiskController := TFloppyDiskController.Create(Result, 2);
+    for I := 0 to High(FFloppyDiskStreams) do
+      Result.FloppyDiskController.InsertDisk(I, FFloppyDiskStreams[I]);
   end;
 
   Result.Initialize;
@@ -286,6 +312,8 @@ begin
 end;
 
 destructor TApplication.Destroy;
+var
+  DiskStream: TStream;
 begin
   if not Settings.Window.FullScreen then
   begin
@@ -310,6 +338,10 @@ begin
   FreeAndNil(FLogWriter);
   FreeAndNil(FDumpStream);
   FreeAndNil(FTapeStream);
+
+  for DiskStream in FFloppyDiskStreams do
+    FreeAndNil(DiskStream);
+
   FreeAndNil(FKeyboardMap);
 
   inherited Destroy;
@@ -357,6 +389,7 @@ end;
 procedure TApplication.HandleCommandLine;
 var
   Option, Extension: String;
+  DiskStream: TStream;
 begin
   for Option in GetNonOptions('', []) do
   begin
@@ -411,6 +444,24 @@ begin
             end;
           end;
         end;
+
+      '.img':
+        begin
+          DiskStream := TFileStream.Create(Option, fmOpenReadWrite);
+          try
+            Insert(DiskStream, FFloppyDiskStreams, Integer.MaxValue);
+            FWorkingFileName := Option;
+            PrintOsd('[FDD] ' + FWorkingFileName);
+          except
+            on E: Exception do
+            begin
+              PrintOsd('[FDD] ' + E.Message);
+              FWorkingFileName := String.Empty;
+              FreeAndNil(DiskStream);
+            end;
+          end;
+        end;
+
     else
       PrintOsd(Format('[Error] Unknown file: %s', [Option]));
     end;
@@ -439,6 +490,7 @@ var
     Code: TBytes = ();
     I: Integer;
   begin
+    Exit;
     SetLength(Code, 64);
     for I := 0 to High(Code) do
     begin
@@ -832,23 +884,127 @@ var
   I: Integer;
 begin
   Result := False;
-  if not Assigned(FBinStream) then Exit;
-
-  I := 0;
-  while FBinStream.Position < FBinStream.Size do
+  if Assigned(FBinStream) then
   begin
-    Cpu.MemoryBus.InvokeWrite(Cpu, $600 + I, FBinStream.ReadByte);
-    Inc(I);
-  end;
-  FreeAndNil(FBinStream);
+    I := 0;
+    while FBinStream.Position < FBinStream.Size do
+    begin
+      Cpu.MemoryBus.InvokeWrite(Cpu, $600 + I, FBinStream.ReadByte);
+      Inc(I);
+    end;
+    FreeAndNil(FBinStream);
 
-  Cpu.Registers.CS := $60;
-  Cpu.Registers.DS := $60;
-  Cpu.Registers.ES := $60;
-  Cpu.Registers.SS := $60;
-  Cpu.Registers.IP := $0;
-  Cpu.Registers.SP := $FFFE;
-  Result := True
+    Cpu.Registers.CS := $60;
+    Cpu.Registers.DS := $60;
+    Cpu.Registers.ES := $60;
+    Cpu.Registers.SS := $60;
+    Cpu.Registers.IP := $0;
+    Cpu.Registers.SP := $FFFE;
+    Result := True;
+  end;
+end;
+
+function TApplication.HandleDiskIO: Boolean;
+var
+  DriveNumber, Cylinder, Head, Sector, SectorCount: Integer;
+const
+  Verbose = True;
+begin
+  Result := False;
+
+  if not Assigned(Computer.FloppyDiskController) then Exit;
+
+  DriveNumber := Computer.Cpu.Registers.DL;
+  Cylinder := Computer.Cpu.Registers.CH
+    or ((Computer.Cpu.Registers.CL and $C0) shl 2);
+  Head := Computer.Cpu.Registers.DH;
+  Sector := Computer.Cpu.Registers.CL and $3F;
+  SectorCount := Computer.Cpu.Registers.AL;
+
+  if Verbose then
+    Write(Format('[%.4x:%.4x] INT 0x13 (AH=0x%.X): ', [
+      Computer.Cpu.Registers.CS,
+      Computer.Cpu.Registers.IP,
+      Computer.Cpu.Registers.AH
+    ]));
+
+  case Computer.Cpu.Registers.AH of
+    $00:
+      { Reset }
+      begin
+        if Computer.FloppyDiskController.Reset then
+        begin
+          Computer.Cpu.Registers.Flags.CF := False;
+          Computer.Cpu.Registers.AH := 0;
+        end else
+        begin
+          Computer.Cpu.Registers.Flags.CF := True;
+          Computer.Cpu.Registers.AH := 1;
+        end;
+
+        Result := True;
+      end;
+    $02:
+      { Read sectors }
+      begin
+        if Verbose then
+          Write(
+            Format(
+              'Drive %s: READ %d sector(s) from ' +
+              'CHS %d:%d:%d, load to %.4x:%.4x',
+            [
+              Chr(Ord('A') + DriveNumber), SectorCount, Cylinder, Head, Sector,
+              Computer.Cpu.Registers.ES, Computer.Cpu.Registers.BX
+            ]));
+
+        if Computer.FloppyDiskController.ReadSectors(
+          DriveNumber, Cylinder, Head, Sector, SectorCount,
+          Computer.Cpu.Registers.ES, Computer.Cpu.Registers.BX) then
+        begin
+          Computer.Cpu.Registers.Flags.CF := False;
+          Computer.Cpu.Registers.AH := 0;
+        end else
+        begin
+          Computer.Cpu.Registers.Flags.CF := True;
+          Computer.Cpu.Registers.AL := 0;
+          Computer.Cpu.Registers.AH := 1;
+        end;
+
+        Result := True;
+      end;
+
+    $03:
+      begin
+        { Disk write }
+        if Verbose then
+          Write(
+            Format(
+              'Drive %s: WRITE %d sector(s) to ' +
+              'CHS %d:%d:%d, load from %.4x:%.4x',
+            [
+              Chr(Ord('A') + DriveNumber), SectorCount, Cylinder, Head, Sector,
+              Computer.Cpu.Registers.ES, Computer.Cpu.Registers.BX
+            ]));
+
+        if Computer.FloppyDiskController.WriteSectors(
+          DriveNumber, Cylinder, Head, Sector, SectorCount,
+          Computer.Cpu.Registers.ES, Computer.Cpu.Registers.BX) then
+        begin
+          Computer.Cpu.Registers.Flags.CF := False;
+          Computer.Cpu.Registers.AH := 0;
+        end else
+        begin
+          Computer.Cpu.Registers.Flags.CF := True;
+          Computer.Cpu.Registers.AL := 0;
+          Computer.Cpu.Registers.AH := 1;
+        end;
+
+        Result := True;
+      end;
+  else;
+  end;
+
+  if Verbose then Writeln;
 end;
 
 procedure TApplication.RenderDisplay(AVideo: TVideoController);
@@ -1136,50 +1292,6 @@ begin
   end;
 end;
 
-{
-procedure TApp.HandleLoadFromBinaryTape(ACpu: TCpu8088);
-var
-  Segment, Offset, BytesToRead: Word;
-  Addr: TPhysicalAddress;
-  Counter: Word;
-  Data: Byte;
-begin
-  if not Assigned(FTapeStream) then
-  begin
-    ACpu.Registers.AH := 4;  { Error: timeout }
-    ACpu.Registers.Flags.CF := True;
-    Exit;
-  end;
-
-  Offset := ACpu.Registers.BX;
-  BytesToRead := ACpu.Registers.CX;
-  if (BytesToRead mod 256) <> 0 then
-    BytesToRead := ((BytesToRead div 256) + 1) * 256;
-
-  for Counter := 1 to BytesToRead do
-  begin
-    if (FTapeStream.Position >= FTapeStream.Size) then
-    begin
-      ACpu.Registers.AH := 2;  { Error: data loss }
-      ACpu.Registers.DX := Counter - 1;
-      ACpu.Registers.Flags.CF := True;
-      Exit;
-    end;
-
-    Data := FTapeStream.ReadByte;
-    if Counter > ACpu.Registers.CX then Continue;
-
-    Addr := GetPhysicalAddress(ACpu.Registers.ES, Offset);
-    ACpu.MemoryBus.InvokeWrite(ACpu, Addr, Data);
-    Inc(Offset);
-  end;
-
-  ACpu.Registers.BX := Offset;
-  ACpu.Registers.DX := ACpu.Registers.CX;
-  ACPu.Registers.Flags.CF := False;
-end;
-}
-
 procedure TApplication.UpdateKeyboard(AKeyboard: TKeyboard);
 var
   Item: specialize TPair<TKeyboard.TKey, specialize TArray<RayLib.TKeyboardKey>>;
@@ -1196,19 +1308,13 @@ end;
 function TApplication.InterruptHook(ASender: TObject; ANumber: Byte): Boolean;
 var
   Cpu: TCpu8088 absolute ASender;
+  I: Word;
+  Data: Byte;
 begin
-  //Writeln(Format('INT %.x', [ANumber]));
-
   Result := False;
   case ANumber of
-    {
-    $08:
-      Writeln((Time*86400):12:9, ' :: INT 8');
-    }
-    $10:
-      begin
-        { BIOS Video function }
-      end;
+    $13:
+      Result := HandleDiskIO;
 
     $15:
       begin
@@ -1265,11 +1371,31 @@ var
   DumpFrame: Dump.TDumpFrame;
   Data: Byte;
   Crc: Word;
+{$J+}
+const
+  InsRep: Boolean = False;
+{$J-}
 begin
+  {
+  if (AInstruction.DS = $1000) and (AInstruction.IP = $0) and (AInstruction.Code[0] = $AC) then
+  begin
+    DumpMemory('/tmp/run.dump', Computer.MemoryBus, 0, (256*1024)-1);
+    Halt;
+  end;
+  }
+
   if not Assigned(FDumpStream) then Exit;
-  if not DumpBios and (AInstruction.CS = $F000) then Exit;
+  if not DumpBios and (AInstruction.CS > $8000) then Exit;
+
+  //if AInstruction.CS <> $0070 then Exit;
+
+  if (AInstruction.Repeating) and InsRep then Exit;
+
+  InsRep := AInstruction.Repeating;
 
   DumpFrame := BuildDumpFrame(Cpu, AInstruction.CS, AInstruction.IP);
+  DumpFrame.CS := AInstruction.CS;
+  DumpFrame.IP := AInstruction.IP;
   FDumpStream.Write(DumpFrame, SizeOf(DumpFrame));
 end;
 
@@ -1295,7 +1421,7 @@ begin
 }
 
   //if (AInstruction.CS = $070) then FStepByStep := True;
-  if (AInstruction.CS = $F000) then Exit;
+  if (AInstruction.CS >= $B000) then Exit;
   //if (AInstruction.CS = $70) then FDebug := True;
 
   if (FDebug or FStepByStep) then

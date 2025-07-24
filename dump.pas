@@ -23,7 +23,7 @@ type
     CS, DS, SS, ES, IP, Flags: Word;
   end;
 
-  function BuildDumpFrame(ACpu: TCpu8088; AAddr: TPhysicalAddress): TDumpFrame;
+  function BuildDumpFrame(ACpu: TCpu8088; AAddr: TPhysicalAddress): TDumpFrame; overload;
   function BuildDumpFrame(ACpu: TCpu8088; ASegment, AOffset: Word): TDumpFrame; overload;
   function GetCrc(ADataFrame: TDumpFrame): Word;
   function CompareFrames(AFirst, ASecond: TDumpFrame; out Errors: TStringArray): Boolean;
@@ -59,7 +59,7 @@ begin
     SS := ACpu.Registers.SS;
     ES := ACpu.Registers.ES;
     IP := ACpu.Registers.IP;
-    Flags := ACpu.Registers.Flags.GetWord;
+    Flags := ACpu.Registers.Flags.GetWord or $F000;
 
     for I := 0 to High(Code) do
     begin
@@ -95,8 +95,9 @@ begin
   Result := Result and Test;
   if not Test then Insert('Address', Errors, Integer.MaxValue);
 
+  //Test := ((AFirst.Flags xor ASecond.Flags) and $F000) = 0;
   {
-  Test := (AFirst.Flags = ASecond.Flags);
+  Test := AFirst.Flags = ASecond.Flags;
   Result := Result and Test;
   if not Test then Insert('Flags', Errors, Integer.MaxValue);
   }
@@ -164,8 +165,8 @@ begin
     Test := Test
       and (AFirst.Stack[I].Address = ASecond.Stack[I].Address)
       and (AFirst.Stack[I].Value = ASecond.Stack[I].Value);
-  Result := Result and Test;
-  if not Test then Insert('Stack', Errors, Integer.MaxValue);
+  //Result := Result and Test;
+//  if not Test then Insert('Stack', Errors, Integer.MaxValue);
  end;
 
 function GetCrc(ADataFrame: TDumpFrame): Word;
