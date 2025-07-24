@@ -2003,6 +2003,7 @@ end;
 
 procedure TCpu8088.HandleHardwareInterrupt;
 begin
+  FHalted := False;
   FHardwareInterrupt.Pending := False;
   EnterISR(FHardwareInterrupt.Number);
 end;
@@ -4697,7 +4698,6 @@ begin
   if FNmiPending then
   begin
     FNmiPending := False;
-    FHardwareInterrupt.Pending := False;
     EnterISR(2);
   end;
 
