@@ -159,6 +159,11 @@
         <Filename Value="shader.fs"/>
         <IsPartOfProject Value="True"/>
       </Unit>
+      <Unit>
+        <Filename Value="floppydiskcontroller.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="FloppyDiskController"/>
+      </Unit>
     </Units>
     <Debugger>
       <ClassConfig Version="1">

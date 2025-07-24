@@ -16,6 +16,7 @@ type
   private
     FCassetteDrive: TCassetteDrive;
     FCpu: TCpu8088;
+    FFloppyDiskController: IFloppyDiskController;
     FInterrptController: IInterruptController;
     FIOBus: IIOBus;
     FMemoryBus: IMemoryBus;
@@ -24,6 +25,7 @@ type
     FMemory: specialize TArray<IMemoryBusDevice>;
     procedure SetCassetteDrive(AValue: TCassetteDrive);
     procedure SetCpu(AValue: TCpu8088);
+    procedure SetFloppyDiskController(AValue: IFloppyDiskController);
     procedure SetInterrptController(AValue: IInterruptController);
     procedure SetIOBus(AValue: IIOBus);
     procedure SetMemoryBus(AValue: IMemoryBus);
@@ -36,6 +38,7 @@ type
     property Timer: TPit8253 read FTimer write FTimer;
     property InterrptController: IInterruptController read FInterrptController write SetInterrptController;
     property CassetteDrive: TCassetteDrive read FCassetteDrive write SetCassetteDrive;
+    property FloppyDiskController: IFloppyDiskController read FFloppyDiskController write SetFloppyDiskController;
     procedure Tick;
     procedure Run(ATicks: Integer=1000);
     procedure Reset;
@@ -51,6 +54,12 @@ procedure TMachine.SetCpu(AValue: TCpu8088);
 begin
   if FCpu = AValue then Exit;
   FCpu := AValue;
+end;
+
+procedure TMachine.SetFloppyDiskController(AValue: IFloppyDiskController);
+begin
+  if FFloppyDiskController = AValue then Exit;
+  FFloppyDiskController := AValue;
 end;
 
 procedure TMachine.SetInterrptController(AValue: IInterruptController);
@@ -163,6 +172,9 @@ begin
 
   if Assigned(FCassetteDrive) then
     IOBus.AttachDevice(FCassetteDrive);
+
+  if Assigned(FloppyDiskController) then
+    MemoryBus.AttachDevice(FloppyDiskController);
 
   for MemoryBlock in FMemory do
     MemoryBus.AttachDevice(MemoryBlock);

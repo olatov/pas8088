@@ -76,6 +76,19 @@ type
     procedure Tick;
   end;
 
+  IFloppyDiskController = interface(IMemoryBusDevice)
+    ['{D35A22B1-05C9-44EF-AAD6-589259DA833A}']
+    procedure InsertDisk(ADriveNumber: Integer; DiskStream: TStream);
+    procedure EjectDisk(ADriveNumber: Integer);
+    function Reset: Boolean;
+    function ReadSectors(
+      ADriveNumber, ACylinder, AHead, ASector, ASectorCount: Integer;
+      ASegment, AOffset: Word): Boolean;
+    function WriteSectors(
+      ADriveNumber, ACylinder, AHead, ASector, ASectorCount: Integer;
+      ASegment, AOffset: Word): Boolean;
+  end;
+
 implementation
 
 end.

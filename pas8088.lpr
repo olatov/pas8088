@@ -17,7 +17,7 @@ uses
   Classes, SysUtils, StrUtils, Math, StreamEx, BufStream, Generics.Collections,
   CustApp, RayLib, RayMath,
   Cpu8088, Memory, IO, Machine, VideoController, Interrupts, Hardware, Debugger,
-  Keyboard, Dump, Timer, AppSettings, Cassette;
+  Keyboard, Dump, Timer, AppSettings, Cassette, FloppyDiskController;
 
 const
   FPS = 50;
@@ -77,8 +77,6 @@ type
       const AFileType: String): TFont;
     function LoadFragmentShaderFromResource(const AResourceName: String): TShader;
     procedure OnBeforeExecution(ASender: TObject; AInstruction: TInstruction);
-    function ReadSector(ASectorNumber: Integer; AMemoryBus: IMemoryBus;
-      ASegment, AOffset: Word): Boolean;
     procedure SetPaused(AValue: Boolean);
   public
     type
@@ -98,7 +96,8 @@ type
     FKeyboardMap: TKeyboardMap;
     FKeyboard: TKeyboard;
     FBiosRomStream, FTapeStream, FBinStream,
-      FCartridgeStream, FFloppyDiskStream: TStream;
+      FCartridgeStream: TStream;
+    FFloppyDiskStreams: specialize TArray<TStream>;
     FComputer: TMachine;
     FLastAudioSampleTime: Double;
     FOsdText: record
@@ -120,8 +119,6 @@ type
     procedure BuildKeyboardMap;
     function HandleBootstrap(const Cpu: TCpu8088): Boolean;
     function HandleDiskIO: Boolean;
-    function BootFromFloppyDisk: Boolean;
-    { procedure HandleLoadFromBinaryTape(ACpu: TCpu8088); }
     procedure UpdateKeyboard(AKeyboard: TKeyboard);
     function BuildMachine: TMachine;
     procedure ToggleFullscreen;
@@ -187,6 +184,7 @@ var
   SystemRam, VideoRam: TRamMemoryBlock;
   CartRomBlock: TRomMemoryBlock;
   FFdcRomStream: TFileStream;
+  I: Integer;
 begin
   Result := TMachine.Create(Nil);
 
@@ -243,7 +241,7 @@ begin
   end;
 
   { Floppy disk }
-  if Assigned(FFloppyDiskStream) then
+  if Length(FFloppyDiskStreams) > 0 then
   begin
     FFdcRomStream := TFileStream.Create('fdc_b504.bin', fmOpenRead);
     try
@@ -253,6 +251,10 @@ begin
     finally
       FreeAndNil(FFdcRomStream);
     end;
+
+    Result.FloppyDiskController := TFloppyDiskController.Create(Result, 2);
+    for I := 0 to High(FFloppyDiskStreams) do
+      Result.FloppyDiskController.InsertDisk(I, FFloppyDiskStreams[I]);
   end;
 
   Result.Initialize;
@@ -310,6 +312,8 @@ begin
 end;
 
 destructor TApplication.Destroy;
+var
+  DiskStream: TStream;
 begin
   if not Settings.Window.FullScreen then
   begin
@@ -334,7 +338,10 @@ begin
   FreeAndNil(FLogWriter);
   FreeAndNil(FDumpStream);
   FreeAndNil(FTapeStream);
-  FreeAndNil(FFloppyDiskStream);
+
+  for DiskStream in FFloppyDiskStreams do
+    FreeAndNil(DiskStream);
+
   FreeAndNil(FKeyboardMap);
 
   inherited Destroy;
@@ -382,6 +389,7 @@ end;
 procedure TApplication.HandleCommandLine;
 var
   Option, Extension: String;
+  DiskStream: TMemoryStream;
 begin
   for Option in GetNonOptions('', []) do
   begin
@@ -439,17 +447,18 @@ begin
 
       '.img':
         begin
-          FFloppyDiskStream := TMemoryStream.Create;
+          DiskStream := TMemoryStream.Create;
           try
-            TMemoryStream(FFloppyDiskStream).LoadFromFile(Option);
+            TMemoryStream(DiskStream).LoadFromFile(Option);
+            Insert(DiskStream, FFloppyDiskStreams, Integer.MaxValue);
             FWorkingFileName := Option;
             PrintOsd('[FDD] ' + FWorkingFileName);
           except
             on E: Exception do
             begin
-              PrintOsd('[DSS] ' + E.Message);
+              PrintOsd('[FDD] ' + E.Message);
               FWorkingFileName := String.Empty;
-              FreeAndNil(FBinStream);
+              FreeAndNil(DiskStream);
             end;
           end;
         end;
@@ -897,68 +906,66 @@ begin
 end;
 
 function TApplication.HandleDiskIO: Boolean;
-const
-  SectorSize = 512;
-  { Hardcode 720K floppy for now: 2 sides, 80 tracks, 9 sectors }
-  Heads = 2;
-  Tracks = 80;
-  SectorsPerTrack = 9;
 var
-  SectorCount, Track, Head, StartingSector, CurrentSector: Integer;
-  Offset: Word;
-  I: Integer;
+  DriveNumber, Cylinder, Head, Sector, SectorCount: Integer;
 begin
   //Writeln('Disk I/O function ', IntToHex(Computer.Cpu.Registers.AH));
   Result := False;
+
+  if not Assigned(Computer.FloppyDiskController) then Exit;
 
   case Computer.Cpu.Registers.AH of
     $00:
       { Reset }
       begin
-        Computer.Cpu.Registers.AH := 0;
-        Computer.Cpu.Registers.Flags.CF := False;
-        Result := True;
-      end;
-
-    $02:
-      { Read sectors }
-      begin
-        SectorCount := Computer.Cpu.Registers.AL;
-        Track := Computer.Cpu.Registers.CH
-          or ((Computer.Cpu.Registers.CL and $C0) shl 2);
-        Head := Computer.Cpu.Registers.DH;
-        StartingSector := Computer.Cpu.Registers.CL and $3F;
-        Offset := Computer.Cpu.Registers.BX;
-
-        {
-        Writeln(
-          Format(
-            '[%.4x:%.4x] ' +
-            'INT 13h (02): Read %d sector(s) starting from Track:%d Head:%d Sector: %d, ' +
-            'load at %.4x:%.4x',
-          [
-            Computer.Cpu.Registers.CS, Computer.Cpu.Registers.IP,
-            SectorCount, Track, Head, StartingSector,
-            Computer.Cpu.Registers.ES, Computer.Cpu.Registers.BX
-          ]));
-        }
-
-        CurrentSector := (Track * (Heads * SectorsPerTrack))
-          + (Head * SectorsPerTrack)
-          + (StartingSector - 1);
-
-        for I := 1 to SectorCount do
+        if Computer.FloppyDiskController.Reset then
         begin
-          ReadSector(CurrentSector, Computer.MemoryBus,
-            Computer.Cpu.Registers.ES, Offset);
-
-          Inc(CurrentSector);
-          Inc(Offset, SectorSize);
+          Computer.Cpu.Registers.Flags.CF := False;
+          Computer.Cpu.Registers.AH := 0;
+        end else
+        begin
+          Computer.Cpu.Registers.Flags.CF := True;
+          Computer.Cpu.Registers.AH := 1;
         end;
 
         Result := True;
-        Computer.Cpu.Registers.AH := 0;
-        Computer.Cpu.Registers.Flags.CF := False;
+      end;
+    $02:
+      { Read sectors }
+      begin
+        DriveNumber := Computer.Cpu.Registers.DL;
+        Cylinder := Computer.Cpu.Registers.CH
+          or ((Computer.Cpu.Registers.CL and $C0) shl 2);
+        Head := Computer.Cpu.Registers.DH;
+        Sector := Computer.Cpu.Registers.CL and $3F;
+        SectorCount := Computer.Cpu.Registers.AL;
+
+        Writeln(
+          Format(
+            '[%.4x:%.4x] ' +
+            'INT 13h (02): Drive:%d: Read %d sector(s) starting from ' +
+            'Track:%d Head:%d Sector: %d, ' +
+            'load at %.4x:%.4x',
+          [
+            Computer.Cpu.Registers.CS, Computer.Cpu.Registers.IP,
+            DriveNumber, SectorCount, Cylinder, Head, Sector,
+            Computer.Cpu.Registers.ES, Computer.Cpu.Registers.BX
+          ]));
+
+        if Computer.FloppyDiskController.ReadSectors(
+          DriveNumber, Cylinder, Head, Sector, SectorCount,
+          Computer.Cpu.Registers.ES, Computer.Cpu.Registers.BX) then
+        begin
+          Computer.Cpu.Registers.Flags.CF := False;
+          Computer.Cpu.Registers.AH := 0;
+        end else
+        begin
+          Computer.Cpu.Registers.Flags.CF := True;
+          Computer.Cpu.Registers.AL := 0;
+          Computer.Cpu.Registers.AH := 1;
+        end;
+
+        Result := True;
       end;
 
     $03:
@@ -975,101 +982,6 @@ begin
         IntToHex(Computer.Cpu.Registers.AH));
     end;
   end;
-end;
-
-function TApplication.ReadSector(ASectorNumber: Integer;
-  AMemoryBus: IMemoryBus; ASegment, AOffset: Word): Boolean;
-var
-  I: Integer;
-  Data: Byte;
-begin
-  Result := False;
-  if not Assigned(FFloppyDiskStream) then Exit;
-
-  FFloppyDiskStream.Seek(ASectorNumber * DiskSectorSize, soBeginning);
-
-  {
-  Writeln(Format('| ----> Read sector #%d to %.4X:%.4X', [ASectorNumber, ASegment, AOffset]));
-  Write('      | ----> Data: ');
-  }
-
-  for I := 0 to DiskSectorSize - 1 do
-  begin
-    Data := FFloppyDiskStream.ReadByte;
-    Computer.MemoryBus.InvokeWrite(
-      Nil, GetPhysicalAddress(ASegment, AOffset + I), Data);
-    {
-    if I < 16 then
-      Write(IntToHex(Data, 2), ' ');
-    }
-  end;
-
-  Result := True;
-end;
-
-function TApplication.BootFromFloppyDisk: Boolean;
-const
-  SectorSize = 512;
-var
-  Data: Byte;
-  I: Integer;
-begin
-  if not Assigned(FFloppyDiskStream) or (FFloppyDiskStream.Size < SectorSize) then Exit;
-  FFloppyDiskStream.Seek(0, soBeginning);
-
-  { Try load sector 0 to 0000:7C00 }
-  if not ReadSector(0, Computer.MemoryBus, 0, $7C00) then Exit;
-
-  { Check for magic bytes }
-  Computer.MemoryBus.InvokeRead(Nil, $7C00 + 510, Data);
-  if Data <> $55 then Exit;
-  Computer.MemoryBus.InvokeRead(Nil, $7C00 + 511, Data);
-  if Data <> $AA then Exit;
-
-  { Bootable disk, transfer control }
-  Computer.Cpu.Registers.CS := 0;
-  Computer.Cpu.Registers.IP := $7C00;
-
-  Computer.Cpu.Registers.AX := 1;
-  Computer.Cpu.Registers.BX := Computer.Cpu.Registers.IP;
-  Computer.Cpu.Registers.CX := 4;
-  Computer.Cpu.Registers.DS := 0;
-  Computer.Cpu.Registers.DX := 0;
-  Computer.Cpu.Registers.ES := 0;
-  Computer.Cpu.Registers.SS := 0;
-
-  Computer.Cpu.Registers.BP := 0;
-//  Computer.Cpu.Registers.SP := $03FE;
-  Computer.Cpu.Registers.SI := $E016;
-  Computer.Cpu.Registers.DI := 0;
-
-  Computer.Cpu.Registers.SP := Computer.Cpu.Registers.SP - 1;
-  Computer.MemoryBus.InvokeWrite(Nil, GetPhysicalAddress(
-    Computer.Cpu.Registers.SS, Computer.Cpu.Registers.SP), $F0);
-  Computer.Cpu.Registers.SP := Computer.Cpu.Registers.SP - 1;
-  Computer.MemoryBus.InvokeWrite(Nil, GetPhysicalAddress(
-    Computer.Cpu.Registers.SS, Computer.Cpu.Registers.SP), $46);
-
-  Computer.Cpu.Registers.SP := Computer.Cpu.Registers.SP - 1;
-  Computer.MemoryBus.InvokeWrite(Nil, GetPhysicalAddress(
-    Computer.Cpu.Registers.SS, Computer.Cpu.Registers.SP), $F0);
-  Computer.Cpu.Registers.SP := Computer.Cpu.Registers.SP - 1;
-  Computer.MemoryBus.InvokeWrite(Nil, GetPhysicalAddress(
-    Computer.Cpu.Registers.SS, Computer.Cpu.Registers.SP), $00);
-
-  Computer.Cpu.Registers.SP := Computer.Cpu.Registers.SP - 1;
-  Computer.MemoryBus.InvokeWrite(Nil, GetPhysicalAddress(
-    Computer.Cpu.Registers.SS, Computer.Cpu.Registers.SP), $E1);
-  Computer.Cpu.Registers.SP := Computer.Cpu.Registers.SP - 1;
-  Computer.MemoryBus.InvokeWrite(Nil, GetPhysicalAddress(
-    Computer.Cpu.Registers.SS, Computer.Cpu.Registers.SP), $39);
-
-  Computer.Cpu.Registers.Flags.AF := True;
-  Computer.Cpu.Registers.Flags.IF_ := True;
-  Computer.Cpu.Registers.Flags.PF := True;
-  Computer.Cpu.Registers.Flags.SF := True;
-  Computer.Cpu.Registers.Flags.ZF := False;
-  Result := True;
 end;
 
 procedure TApplication.RenderDisplay(AVideo: TVideoController);
