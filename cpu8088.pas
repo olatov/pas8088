@@ -1777,7 +1777,6 @@ end;
 
 procedure TCpu8088.Push(AValue: Word);
 begin
-  {Push(AValue, StackSegment);}
   Push(AValue, Registers.SS);
 end;
 
@@ -3111,7 +3110,7 @@ begin
     Registers.ES, Registers.DI,
     ReadMemoryByte(DataSegment, Registers.SI));
 
-  Registers.SI := Registers.SI + Delta[Registers.flags.DF];
+  Registers.SI := Registers.SI + Delta[Registers.Flags.DF];
   Registers.DI := Registers.DI + Delta[Registers.Flags.DF];
 end;
 
@@ -3126,7 +3125,7 @@ begin
     Registers.ES, Registers.DI + 1,
     ReadMemoryByte(DataSegment, Registers.SI + 1));
 
-  Registers.SI := Registers.SI + Delta[Registers.flags.DF];
+  Registers.SI := Registers.SI + Delta[Registers.Flags.DF];
   Registers.DI := Registers.DI + Delta[Registers.Flags.DF];
 end;
 
@@ -4740,7 +4739,6 @@ begin
     else
       begin
         FCurrentInstruction.OpCode := Data;
-
         Break;
       end;
     end;
