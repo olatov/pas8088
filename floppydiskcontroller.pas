@@ -35,8 +35,8 @@ type
     function ChsToLogical(Cylinder, Head, Sector: Integer): Integer;
     procedure SetDiskGeometry(AValue: TDiskGeometry);
     procedure Seek(ADriveNumber, ALogicalSector: Integer);
-    procedure WriteSectorFromBuffer(ADriveNumber: Integer);
-    procedure ReadSectorToBuffer(ADriveNumber: Integer);
+    function TryWriteSectorFromBuffer(ADriveNumber: Integer): Boolean;
+    function TryReadSectorToBuffer(ADriveNumber: Integer): Boolean;
     procedure LoadBufferFromMemory(ASegment, AOffset: Word);
     procedure SaveBufferToMemory(ASegment, AOffset: Word);
     procedure EnsureDriveNumberIsValid(ADriveNumber: Integer);
@@ -62,8 +62,10 @@ type
     procedure WriteMemoryByte(AAddress: TPhysicalAddress; AData: Byte);
     function ReadMemoryByte(AAddress: TPhysicalAddress): Byte;
     property MemoryBus: IMemoryBus read GetMemoryBus write SetMemoryBus;
-    function OnMemoryRead(Sender: IMemoryBusDevice; AAddress: TPhysicalAddress; out AData: Byte): Boolean;
-    procedure OnMemoryWrite(Sender: IMemoryBusDevice; AAddress: TPhysicalAddress; AData: Byte);
+    function OnMemoryRead(Sender: IMemoryBusDevice; AAddress:
+      TPhysicalAddress; out AData: Byte): Boolean;
+    procedure OnMemoryWrite(Sender: IMemoryBusDevice; AAddress:
+      TPhysicalAddress; AData: Byte);
   end;
 
 implementation
@@ -93,15 +95,32 @@ begin
     ALogicalSector * (DiskGeometry.SectorSize), soBeginning);
 end;
 
-procedure TFloppyDiskController.WriteSectorFromBuffer(ADriveNumber: Integer);
+function TFloppyDiskController.TryWriteSectorFromBuffer(
+  ADriveNumber: Integer): Boolean;
+var
+  Disk: TStream;
 begin
+  Result := False;
+  Disk := FDiskStreams[ADriveNumber];
+  if not Assigned(Disk)
+    or (Disk.Position > (Disk.Size - DiskGeometry.SectorSize)) then Exit;
 
+  Disk.Write(FBuffer[0], DiskGeometry.SectorSize);
+  Result := True;
 end;
 
-procedure TFloppyDiskController.ReadSectorToBuffer(ADriveNumber: Integer);
+function TFloppyDiskController.TryReadSectorToBuffer(
+  ADriveNumber: Integer): Boolean;
+var
+  Disk: TStream;
 begin
-  if not Assigned(FDiskStreams[ADriveNumber]) then Exit;
-  FDiskStreams[ADriveNumber].Read(FBuffer[0], DiskGeometry.SectorSize);
+  Result := False;
+  Disk := FDiskStreams[ADriveNumber];
+  if not Assigned(Disk)
+    or (Disk.Position > (Disk.Size - DiskGeometry.SectorSize)) then Exit;
+
+  Disk.Read(FBuffer[0], DiskGeometry.SectorSize);
+  Result := True;
 end;
 
 procedure TFloppyDiskController.LoadBufferFromMemory(ASegment, AOffset: Word);
@@ -178,15 +197,16 @@ var
   I: Integer;
   CurrentOffset: Word;
 begin
+  Result := False;
   EnsureDriveNumberIsValid(ADriveNumber);
-  if not VerifyChs(ACylinder, AHead, ASector) then Exit(False);
+  if not VerifyChs(ACylinder, AHead, ASector) then Exit;
 
   Seek(ADriveNumber, ChsToLogical(ACylinder, AHead, ASector));
   CurrentOffset := AOffset;
 
   for I := 1 to ASectorCount do
   begin
-    ReadSectorToBuffer(ADriveNumber);
+    if not TryReadSectorToBuffer(ADriveNumber) then Exit;
     SaveBufferToMemory(ASegment, CurrentOffset);
     Inc(CurrentOffset, DiskGeometry.SectorSize);
   end;
@@ -197,8 +217,25 @@ end;
 function TFloppyDiskController.WriteSectors(
   ADriveNumber, ACylinder, AHead, ASector, ASectorCount:Integer;
   ASegment, AOffset: Word): Boolean;
+var
+  I: Integer;
+  CurrentOffset: Word;
 begin
+  Result := False;
+  EnsureDriveNumberIsValid(ADriveNumber);
+  if not VerifyChs(ACylinder, AHead, ASector) then Exit;
 
+  Seek(ADriveNumber, ChsToLogical(ACylinder, AHead, ASector));
+  CurrentOffset := AOffset;
+
+  for I := 1 to ASectorCount do
+  begin
+    LoadBufferFromMemory(ASegment, CurrentOffset);
+    if not TryWriteSectorFromBuffer(ADriveNumber) then Exit;
+    Inc(CurrentOffset, DiskGeometry.SectorSize);
+  end;
+
+  Result := True;
 end;
 
 function TFloppyDiskController.GetMemoryBus: IMemoryBus;
@@ -219,7 +256,7 @@ end;
 
 function TFloppyDiskController.ReadMemoryByte(AAddress: TPhysicalAddress): Byte;
 begin
-
+  Result := 0;
 end;
 
 function TFloppyDiskController.OnMemoryRead(Sender: IMemoryBusDevice;

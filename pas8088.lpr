@@ -389,7 +389,7 @@ end;
 procedure TApplication.HandleCommandLine;
 var
   Option, Extension: String;
-  DiskStream: TMemoryStream;
+  DiskStream: TStream;
 begin
   for Option in GetNonOptions('', []) do
   begin
@@ -447,9 +447,8 @@ begin
 
       '.img':
         begin
-          DiskStream := TMemoryStream.Create;
+          DiskStream := TFileStream.Create(Option, fmOpenReadWrite);
           try
-            TMemoryStream(DiskStream).LoadFromFile(Option);
             Insert(DiskStream, FFloppyDiskStreams, Integer.MaxValue);
             FWorkingFileName := Option;
             PrintOsd('[FDD] ' + FWorkingFileName);
@@ -908,11 +907,26 @@ end;
 function TApplication.HandleDiskIO: Boolean;
 var
   DriveNumber, Cylinder, Head, Sector, SectorCount: Integer;
+const
+  Verbose = True;
 begin
-  //Writeln('Disk I/O function ', IntToHex(Computer.Cpu.Registers.AH));
   Result := False;
 
   if not Assigned(Computer.FloppyDiskController) then Exit;
+
+  DriveNumber := Computer.Cpu.Registers.DL;
+  Cylinder := Computer.Cpu.Registers.CH
+    or ((Computer.Cpu.Registers.CL and $C0) shl 2);
+  Head := Computer.Cpu.Registers.DH;
+  Sector := Computer.Cpu.Registers.CL and $3F;
+  SectorCount := Computer.Cpu.Registers.AL;
+
+  if Verbose then
+    Write(Format('[%.4x:%.4x] INT 0x13 (AH=0x%.X): ', [
+      Computer.Cpu.Registers.CS,
+      Computer.Cpu.Registers.IP,
+      Computer.Cpu.Registers.AH
+    ]));
 
   case Computer.Cpu.Registers.AH of
     $00:
@@ -933,24 +947,15 @@ begin
     $02:
       { Read sectors }
       begin
-        DriveNumber := Computer.Cpu.Registers.DL;
-        Cylinder := Computer.Cpu.Registers.CH
-          or ((Computer.Cpu.Registers.CL and $C0) shl 2);
-        Head := Computer.Cpu.Registers.DH;
-        Sector := Computer.Cpu.Registers.CL and $3F;
-        SectorCount := Computer.Cpu.Registers.AL;
-
-        Writeln(
-          Format(
-            '[%.4x:%.4x] ' +
-            'INT 13h (02): Drive:%d: Read %d sector(s) starting from ' +
-            'Track:%d Head:%d Sector: %d, ' +
-            'load at %.4x:%.4x',
-          [
-            Computer.Cpu.Registers.CS, Computer.Cpu.Registers.IP,
-            DriveNumber, SectorCount, Cylinder, Head, Sector,
-            Computer.Cpu.Registers.ES, Computer.Cpu.Registers.BX
-          ]));
+        if Verbose then
+          Write(
+            Format(
+              'Drive %s: READ %d sector(s) from ' +
+              'CHS %d:%d:%d, load to %.4x:%.4x',
+            [
+              Chr(Ord('A') + DriveNumber), SectorCount, Cylinder, Head, Sector,
+              Computer.Cpu.Registers.ES, Computer.Cpu.Registers.BX
+            ]));
 
         if Computer.FloppyDiskController.ReadSectors(
           DriveNumber, Cylinder, Head, Sector, SectorCount,
@@ -970,18 +975,36 @@ begin
 
     $03:
       begin
-        { No writes yet - report a protected disk for now }
+        { Disk write }
+        if Verbose then
+          Write(
+            Format(
+              'Drive %s: WRITE %d sector(s) to ' +
+              'CHS %d:%d:%d, load from %.4x:%.4x',
+            [
+              Chr(Ord('A') + DriveNumber), SectorCount, Cylinder, Head, Sector,
+              Computer.Cpu.Registers.ES, Computer.Cpu.Registers.BX
+            ]));
+
+        if Computer.FloppyDiskController.WriteSectors(
+          DriveNumber, Cylinder, Head, Sector, SectorCount,
+          Computer.Cpu.Registers.ES, Computer.Cpu.Registers.BX) then
+        begin
+          Computer.Cpu.Registers.Flags.CF := False;
+          Computer.Cpu.Registers.AH := 0;
+        end else
+        begin
+          Computer.Cpu.Registers.Flags.CF := True;
+          Computer.Cpu.Registers.AL := 0;
+          Computer.Cpu.Registers.AH := 1;
+        end;
+
         Result := True;
-        Computer.Cpu.Registers.AH := 1;
-        Computer.Cpu.Registers.AL := 3;
-        Computer.Cpu.Registers.Flags.CF := True;
       end;
-  else
-    begin
-      Writeln('BIOS I/O function not implemented: ',
-        IntToHex(Computer.Cpu.Registers.AH));
-    end;
+  else;
   end;
+
+  if Verbose then Writeln;
 end;
 
 procedure TApplication.RenderDisplay(AVideo: TVideoController);
