@@ -169,9 +169,10 @@ end;
 function TCassetteDrive.GetSampleRate: Integer;
 begin
   case State of
-    csPlaying: Result := FWavReader.fmt.SampleRate;
-    csRecording: Result := FWavWriter.fmt.SampleRate;
-  else;
+    csPlaying: Result := FWavReader.Fmt.SampleRate;
+    csRecording: Result := FWavWriter.Fmt.SampleRate;
+  else
+    Result := 0;
   end;
 end;
 
@@ -240,7 +241,7 @@ end;
 
 function TCassetteDrive.ReadIOByte(AAddress: Word): Byte;
 begin
-
+  Result := 0;
 end;
 
 function TCassetteDrive.OnIORead(
