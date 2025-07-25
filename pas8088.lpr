@@ -189,7 +189,7 @@ var
   BiosRomBlock, FdcRomBlock: TRomMemoryBlock;
   SystemRam, VideoRam: TRamMemoryBlock;
   CartRomBlock: TRomMemoryBlock;
-  FFdcRomStream: TFileStream;
+  FdcRomStream: TFileStream;
   I: Integer;
 begin
   Result := TMachine.Create(Nil);
@@ -247,18 +247,19 @@ begin
   end;
 
   { Floppy disk }
-  if Length(FFloppyDiskStreams) > 0 then
+  if Settings.FloppyDisk.Enabled and (Length(FFloppyDiskStreams) > 0) then
   begin
-    FFdcRomStream := TFileStream.Create('fdc_b504.bin', fmOpenRead);
+    FdcRomStream := TFileStream.Create(Settings.FloppyDisk.ControllerRom, fmOpenRead);
     try
-      FdcRomBlock := TRomMemoryBlock.Create(Result, FFdcRomStream.Size, FdcRomAddress);
-      FdcRomBlock.LoadFromStream(FFdcRomStream);
+      FdcRomBlock := TRomMemoryBlock.Create(Result, FdcRomStream.Size, FdcRomAddress);
+      FdcRomBlock.LoadFromStream(FdcRomStream);
       Result.AddMemory(FdcRomBlock);
     finally
-      FreeAndNil(FFdcRomStream);
+      FreeAndNil(FdcRomStream);
     end;
 
-    Result.FloppyDiskController := TFloppyDiskController.Create(Result, 2);
+    Result.FloppyDiskController := TFloppyDiskController.Create(
+      Result, Settings.FloppyDisk.Drives);
     for I := 0 to High(FFloppyDiskStreams) do
       Result.FloppyDiskController.InsertDisk(I, FFloppyDiskStreams[I]);
   end;

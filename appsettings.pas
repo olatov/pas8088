@@ -26,12 +26,12 @@ type
           Mute: Boolean;
           property Volume: Double read FVolume write SetVolume;
         end;
-      public
-        Window: record
-          Width, Height: Integer;
-          AspectRatio: Double;
-          FullScreen: Boolean;
-        end;
+  public
+    Window: record
+      Width, Height: Integer;
+      AspectRatio: Double;
+      FullScreen: Boolean;
+    end;
 
     Machine: record
       ClockSpeed: Integer;
@@ -46,6 +46,12 @@ type
     end;
 
     Audio: TAudioSettings;
+
+    FloppyDisk: record
+      Enabled: Boolean;
+      Drives: Integer;
+      ControllerRom: String;
+    end;
 
     procedure SaveToFile(AFileName: String);
     procedure LoadFromFile(AFileName: String);
@@ -81,6 +87,10 @@ begin
 
     Config.WriteBool('Audio', 'Mute', Audio.Mute);
     Config.WriteFloat('Audio', 'Volume', Audio.Volume);
+
+    Config.WriteBool('FloppyDisk', 'Enabled', FloppyDisk.Enabled);
+    Config.WriteInteger('FloppyDisk', 'Drives', FloppyDisk.Drives);
+    Config.WriteString('FloppyDisk', 'ControllerRom', FloppyDisk.ControllerRom);
   finally
     FreeAndNil(Config);
   end;
@@ -103,7 +113,9 @@ begin
 
     Machine.Ram := EnsureRange(
       Config.ReadInteger('Machine', 'Ram', 640), 128, 640);
-    Machine.BiosRom := 'poisk_1991.rom';
+
+    Machine.BiosRom := Config.ReadString(
+      'Machine', 'BiosRom', 'rom/bios-1991.rom');
 
     Window.Width := EnsureRange(
       Config.ReadInteger('Window', 'Width', 640),
@@ -121,6 +133,11 @@ begin
 
     Audio.Mute := Config.ReadBool('Audio', 'Mute', False);
     Audio.Volume := Config.ReadFloat('Audio', 'Volume', 0.25);
+
+    FloppyDisk.Enabled := Config.ReadBool('FloppyDisk', 'Enabled', True);
+    FloppyDisk.Drives := Config.ReadInteger('FloppyDisk', 'Drives', 2);
+    FloppyDisk.ControllerRom := Config.ReadString(
+      'FloppyDisk', 'ControllerRom', 'rom/fdc-b504.rom');
   finally
     FreeAndNil(Config);
   end;
