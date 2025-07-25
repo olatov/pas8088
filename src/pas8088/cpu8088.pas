@@ -282,6 +282,7 @@ type
     procedure HandleOrALImm8;  { $0C }
     procedure HandleOrAXImm16;  { $0D }
     procedure HandlePushCS;  { $0E }
+    procedure HandlePopCS;  { $0F }
 
     procedure HandleAdcRM8Reg8;  { $10 }
     procedure HandleAdcRM16Reg16;  { $11 }
@@ -1852,6 +1853,7 @@ begin
       $0C:      FInstructionHandlers[I] := @HandleOrALImm8;
       $0D:      FInstructionHandlers[I] := @HandleOrAXImm16;
       $0E:      FInstructionHandlers[I] := @HandlePushCS;
+      $0F:      FInstructionHandlers[I] := @HandlePopCS;
       { $0F : PopCS / [n/a] }
       $10:      FInstructionHandlers[I] := @HandleAdcRM8Reg8;
       $11:      FInstructionHandlers[I] := @HandleAdcRM16Reg16;
@@ -2215,6 +2217,11 @@ end;
 procedure TCpu8088.HandlePushCS;
 begin
   Push(Registers.CS);
+end;
+
+procedure TCpu8088.HandlePopCS;
+begin
+  Registers.CS := Pop;
 end;
 
 procedure TCpu8088.HandleAdcRM8Reg8;
