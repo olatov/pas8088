@@ -15,9 +15,9 @@ uses
   Windows,
   {$EndIf}
   Classes, SysUtils, StrUtils, Math, StreamEx, BufStream, Generics.Collections,
-  CustApp, RayLib, RayMath,
-  Cpu8088, Memory, IO, Machine, VideoController, Interrupts, Hardware,
-  Keyboard, Dump, Timer, AppSettings, Cassette, FloppyDiskController, Buffers;
+  CustApp, RayLib, RayMath, Cpu8088, Memory, IO, Machine, VideoController,
+  Interrupts, Hardware, Keyboard, Dump, Timer, AppSettings, Cassette,
+  FloppyDiskController, Buffers, Debugger;
 
 const
   Version = '0.1';
@@ -45,6 +45,7 @@ type
 
   TApplication = class(TCustomApplication)
   private
+    FDebugger: TWebDebugger;
     type
       TOsdText = class
         Text: String;
@@ -52,11 +53,13 @@ type
         Lifetime: Double; { In seconds }
       end;
       TOsdTextList = specialize TObjectList<TOsdText>;
+    procedure SetDebugger(AValue: TWebDebugger);
   private
     FFont: TFont;
     FGfxShader: TShader;
     FPaused: Boolean;
     FSpeakerStream: TAudioStream;
+    property Debugger: TWebDebugger read FDebugger write SetDebugger;
     procedure DumpMemory(AFileName: String; AMemoryBus: IMemoryBus;
       AAddress: TPhysicalAddress; ALength: Integer);
     procedure HandleCommandLine;
@@ -276,6 +279,8 @@ end;
 constructor TApplication.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
+
+  Debugger := TWebDebugger.Create(Self);
 
   if not DumpFile.IsEmpty then
   begin
@@ -602,6 +607,9 @@ begin
   Computer.Cpu.OnAfterInstruction := @OnAfterInstruction;
   Computer.Cpu.OnBeforeExecution := @OnBeforeExecution;
 
+  Debugger.Cpu := Computer.Cpu;
+  Debugger.Start;
+
   LinesLoc := GetShaderLocation(GfxShader, 'lines');
   SetShaderValue(GfxShader, LinesLoc, @LinesCount, SHADER_UNIFORM_FLOAT);
 
@@ -786,6 +794,12 @@ begin
 
     EndDrawing;
   end;
+end;
+
+procedure TApplication.SetDebugger(AValue: TWebDebugger);
+begin
+  if FDebugger = AValue then Exit;
+  FDebugger := AValue;
 end;
 
 procedure TApplication.DumpMemory(AFileName: String;
