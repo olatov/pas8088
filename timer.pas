@@ -50,7 +50,10 @@ type
         procedure SetReloadValue(AValue: Word);
       public
         type
-          TState = (csUninitialized, csWaitingLoByte, csWaitingHiByte, csValueSet, csCounting);
+          TState = (
+            csUninitialized, csWaitingLoByte, csWaitingHiByte,
+            csWaitingGateHigh, csValueSet, csCounting
+          );
       public
         Id: Integer;
         CountingMode: TCountMode;
@@ -343,19 +346,24 @@ begin
   FOperatingMode := AValue;
 
   case AValue of
-    omInterruptOnTerminalCount, omSquareWaveGenerator:
+    omInterruptOnTerminalCount:
       begin
         Output := False;
         State := specialize IfThen<TState>(
           AccessMode = amHiByte, csWaitingHiByte, csWaitingLoByte);
       end;
 
-    omRateGenerator:
+    omRateGenerator,
+    omHardwareReTriggerableOneShot,
+    omSquareWaveGenerator,
+    omRateGeneratorDuplicate,
+    omSquareWaveGeneratorDuplicate:
       begin
         Output := True;
         State := specialize IfThen<TState>(
           AccessMode = amHiByte, csWaitingHiByte, csWaitingLoByte);
-      end
+      end;
+
   else
     raise Exception.CreateFmt('Implement me: operating mode %d', [Ord(AValue)]);
   end;
@@ -383,15 +391,20 @@ end;
 
 procedure TPit8253.TChannel.Tick;
 begin
-  if not (Gate and (State = csCounting)) then Exit;
-
-  Dec(Value);
+  if (Gate and (State = csCounting)) then Dec(Value);
 
   case OperatingMode of
     omInterruptOnTerminalCount:
-      if Value = 0 then
+      if Value = 0 then Output := True;
+
+    omHardwareReTriggerableOneShot:
       begin
-        Output := True;
+        if (State = csWaitingGateHigh) and Gate then
+        begin
+          State := csCounting;
+          Output := False;
+        end;
+        if Value = 0 then Output := True;
       end;
 
     omRateGenerator, omRateGeneratorDuplicate:
@@ -428,7 +441,7 @@ procedure TPit8253.TChannel.WriteReloadValue(AValue: Byte);
 begin
   case State of
     csWaitingLoByte: WriteLoByte(AValue);
-    csWaitingHiByte: WriteHiByte(Avalue);
+    csWaitingHiByte: WriteHiByte(AValue);
     csCounting:
       case AccessMode of
         amLatch: raise Exception.Create('Invalid access mode');
@@ -445,6 +458,13 @@ begin
             ReloadValue := NewReloadValue;
             Value := InternalDivisor;
             State := csCounting;
+          end;
+
+        omHardwareReTriggerableOneShot:
+          begin
+            ReloadValue := NewReloadValue;
+            Value := InternalDivisor;
+            State := csWaitingGateHigh;
           end;
 
         omRateGenerator:
