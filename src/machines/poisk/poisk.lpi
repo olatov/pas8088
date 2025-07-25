@@ -56,7 +56,7 @@
         <CompilerOptions>
           <Version Value="11"/>
           <Target>
-            <Filename Value="bin/poisk-$(TargetCPU)-$(TargetOS)"/>
+            <Filename Value="bin/poisk-$(TargetOS)-$(TargetCPU)"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
@@ -98,6 +98,7 @@
       <Unit>
         <Filename Value="poisk.lpr"/>
         <IsPartOfProject Value="True"/>
+        <UnitName Value="Poisk"/>
       </Unit>
       <Unit>
         <Filename Value="buffers.pas"/>
