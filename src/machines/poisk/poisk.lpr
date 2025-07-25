@@ -502,7 +502,7 @@ procedure TApplication.RunMachine;
     begin
       Turbo := not Turbo;
       PrintOsd('[Video] Turbo '
-        + BoolToStr(Settings.Video.PalletteBug, 'on', 'off'));
+        + BoolToStr(Turbo, 'on', 'off'));
     end;
 
     if IsKeyPressed(KEY_B) then
