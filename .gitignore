@@ -1,4 +1,5 @@
 lib/
+bin/
 backup/
 *.lps
 *.o
@@ -17,4 +18,4 @@ backup/
 *.exe
 *.res
 *.com
-./pas8088
+

@@ -23,7 +23,7 @@
         <CompilerOptions>
           <Version Value="11"/>
           <Target>
-            <Filename Value="poisk"/>
+            <Filename Value="bin/poisk-dbg"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
@@ -56,7 +56,7 @@
         <CompilerOptions>
           <Version Value="11"/>
           <Target>
-            <Filename Value="poisk"/>
+            <Filename Value="bin/poisk-$(TargetCPU)-$(TargetOS)"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
@@ -109,7 +109,7 @@
   <CompilerOptions>
     <Version Value="11"/>
     <Target>
-      <Filename Value="poisk"/>
+      <Filename Value="bin/poisk"/>
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
