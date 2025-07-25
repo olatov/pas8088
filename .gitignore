@@ -7,3 +7,14 @@ backup/
 *.BIN
 *.log
 *.ppu
+*.asm
+*.dump
+*.tape
+*.cart
+*.img
+*.wav
+*.dll
+*.exe
+*.res
+*.com
+./pas8088
