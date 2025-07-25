@@ -10,21 +10,21 @@ uses
 
 const
   CGABlack = $000000;
-  CGABlue = $aa0000;
-  CGAGreen = $00aa00;
-  CGACyan = $aaaa00;
-  CGARed = $0000aa;
-  CGAMagenta = $aa00aa;
-  CGABrown = $0055aa;
-  CGALightGray = $aaaaaa;
-  CGADarkGray = $181818; { $555555 }
-  CGABrightBlue = $ff0000;
-  CGABrightGreen = $00ff00;
-  CGABrightCyan = $ffff00;
-  CGABrightRed = $0000ff;
-  CGABrightMagenta = $ff00ff;
-  CGAYellow = $55ffff;
-  CGAWhite = $ffffff;
+  CGABlue = $AA0000;
+  CGAGreen = $00AA00;
+  CGACyan = $AAAA00;
+  CGARed = $0000AA;
+  CGAMagenta = $AA00AA;
+  CGABrown = $0055AA;
+  CGALightGray = $AAAAAA;
+  CGADarkGray = $555555;
+  CGABrightBlue = $FF0000;
+  CGABrightGreen = $00FF00;
+  CGABrightCyan = $FFFF00;
+  CGABrightRed = $0000FF;
+  CGABrightMagenta = $FF00FF;
+  CGAYellow = $55FFFF;
+  CGAWhite = $FFFFFF;
 
 type
   TColor = UInt32;
@@ -45,14 +45,13 @@ const
     { Palette 0, low intensity [00] }
     (CGABlack, CGAGreen, CGARed, CGABrown),
 
-    { Palette 1, low intensity [01] }
+    { Palette 0, high intensity [01] }
+    (CGADarkGray, CGABrightGreen, CGABrightRed, CGAYellow),
+
+    { Palette 1, low intensity [10] }
     (CGABlack, CGACyan, CGAMagenta, CGAWhite),
 
-    { Palette 1, high intensity [10] }
-    (CGADarkGray, CGABrightCyan, CGABrightMagenta, CGAWhite),
-
-    { Palette 0, high intensity [11], possibly incorrect on Poisk }
-    { (CGADarkGray, CGABrightGreen, CGABrightRed, CGAYellow), }
+    { Palette 1, high intensity [11] }
     (CGADarkGray, CGABrightCyan, CGABrightMagenta, CGAWhite),
 
     { Hi res BW pallette }
@@ -104,7 +103,7 @@ type
     FIOBus: IIOBus;
     FMemoryBus: IMemoryBus;
     FNmiTrigger: INmiTrigger;
-    FFrameTicks, FLineTicks, FTicksPerFrame: QWord;
+    FFrameTicks, FLineTicks: QWord;
     FLineDuration, FVertRetraceDuration, FHorizRetraceDuration: QWord;
     function GetBackgroundColor: TColor;
     function GetHorizRatrace: Boolean;
@@ -175,6 +174,16 @@ begin
   Index.Palette := FPort68Register.Pallette;
   Index.Intensity := FPort68Register.Intensity;
   Index.Unused := 0;
+
+  {
+    Poisk (rev. 1991) had a hardware bug mixing up Pallette and Intensity bits -
+    for that matter I don't remember seeing yellow on green/red pallette, nor
+    low-intensity variant of cyan/magenta). This affected the FG colors only,
+    then the BG could be any of the 16 colors properly.
+    Poisk (rev. 1989) might've had more/other bugs.
+    This may be inaccurate though, correct as necessary.
+  }
+  Index.Intensity := Index.Palette;
 
   case BitsPerPixel of
     2: Result := CGAPallettes[Byte(Index)];
