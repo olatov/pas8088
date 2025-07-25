@@ -36,6 +36,7 @@ type
     Machine: record
       ClockSpeed: Integer;
       CpuSpeed: Integer;
+      Turbo: Boolean;
       Ram: Integer;
       BiosRom: String;
     end;
@@ -76,6 +77,7 @@ begin
   try
     Config.WriteInteger('Machine', 'ClockSpeed', Machine.ClockSpeed);
     Config.WriteInteger('Machine', 'CpuSpeed', Machine.CpuSpeed);
+    Config.WriteBool('Machine', 'Turbo', Machine.Turbo);
     Config.WriteInteger('Machine', 'RAM', Machine.Ram);
     Config.WriteString('Machine', 'BiosRom', Machine.BiosRom);
 
@@ -114,6 +116,7 @@ begin
       Config.ReadInteger('Machine', 'CpuSpeed', 250000),
       125000, 2500000);
     Machine.CpuSpeed := Min(Machine.ClockSpeed, Machine.CpuSpeed);
+    Machine.Turbo := Config.ReadBool('Machine', 'Turbo', False);
 
     Machine.Ram := EnsureRange(
       Config.ReadInteger('Machine', 'Ram', 640), 128, 640);

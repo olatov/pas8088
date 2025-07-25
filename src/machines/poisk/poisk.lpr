@@ -1,4 +1,4 @@
-program poisk;
+program Poisk;
 
 {$mode objfpc}{$H+}
 
@@ -57,7 +57,6 @@ type
     FGfxShader: TShader;
     FPaused: Boolean;
     FSpeakerStream: TAudioStream;
-    FTurbo: Boolean;
     procedure DumpMemory(AFileName: String; AMemoryBus: IMemoryBus;
       AAddress: TPhysicalAddress; ALength: Integer);
     procedure HandleCommandLine;
@@ -68,7 +67,6 @@ type
     function LoadFragmentShaderFromResource(const AResourceName: String): TShader;
     procedure OnBeforeExecution(ASender: TObject; AInstruction: TInstruction);
     procedure SetPaused(AValue: Boolean);
-    procedure SetTurbo(AValue: Boolean);
   public
     type
       TKeyboardMap = specialize TDictionary<TKeyboard.TKey, specialize TArray<RayLib.TKeyboardKey>>;
@@ -93,7 +91,6 @@ type
     property SpeakerAudioStream: TAudioStream read FSpeakerStream write FSpeakerStream;
     property Computer: TMachine read FComputer write FComputer;
     property Paused: Boolean read FPaused write SetPaused;
-    property Turbo: Boolean read FTurbo write SetTurbo;
     procedure RenderDisplay(AVideo: TVideoController);
     procedure RunMachine;
     procedure RenderOsd;
@@ -500,9 +497,9 @@ procedure TApplication.RunMachine;
 
     if IsKeyPressed(KEY_T) then
     begin
-      Turbo := not Turbo;
+      Settings.Machine.Turbo := not Settings.Machine.Turbo;
       PrintOsd('[Video] Turbo '
-        + BoolToStr(Turbo, 'on', 'off'));
+        + BoolToStr(Settings.Machine.Turbo, 'on', 'off'));
     end;
 
     if IsKeyPressed(KEY_B) then
@@ -709,7 +706,7 @@ begin
         ])));
     end;
 
-    Computer.Cpu.WaitStates := IfThen(Turbo, 0, InitialWaitStates);
+    Computer.Cpu.WaitStates := IfThen(Settings.Machine.Turbo, 0, InitialWaitStates);
     try
       for I := 0 to CyclesPerFrame - 1 do
       begin
@@ -717,7 +714,7 @@ begin
 
         VirtualTime := VirtualTime + TimePerCycle;
         Computer.Tick;
-        if (Computer.Cpu.WaitStates <= 0) and not Turbo then
+        if (Computer.Cpu.WaitStates <= 0) and not Settings.Machine.Turbo then
           Computer.Cpu.WaitStates := WaitStates;
 
         if (VirtualTime - FLastAudioSampleTime) >= TimePerSpeakerSample then
@@ -1211,12 +1208,6 @@ procedure TApplication.SetPaused(AValue: Boolean);
 begin
   if FPaused = AValue then Exit;
   FPaused := AValue;
-end;
-
-procedure TApplication.SetTurbo(AValue: Boolean);
-begin
-  if FTurbo = AValue then Exit;
-  FTurbo := AValue;
 end;
 
 procedure TApplication.OnAfterInstruction(ASender: TObject; AInstruction: TInstruction);
