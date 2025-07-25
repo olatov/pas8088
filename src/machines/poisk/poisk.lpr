@@ -263,9 +263,9 @@ begin
   Item.Color := Fade(AColor, 0.5);
   Item.Lifetime := 4;
 
-  FOsdTextItems.Insert(0, Item);
+  FOsdTextItems.Add(Item);
   while FOsdTextItems.Count > 10 do
-    FOsdTextItems.Remove(FOsdTextItems.Last);
+    FOsdTextItems.Remove(FOsdTextItems.First);
 end;
 
 procedure TApplication.PrintOsd(AText: String);
