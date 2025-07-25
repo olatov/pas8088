@@ -147,11 +147,11 @@ end;
 
 procedure TPic8259.RaiseInterrupt(AIrq: Byte);
 begin
-  if not Assigned(Cpu) then Exit;
+  if not Assigned(Cpu) or (Isr <> 0) then Exit;
 
   if Cpu.RaiseHardwareInterrupt(AIrq + VectorBase) then
   begin
-    Isr := AIrq;
+    Isr := Isr.SetBit(AIrq);
     Irr := Irr.ClearBit(AIrq);
   end;
 end;
@@ -214,7 +214,7 @@ begin
             Result := True;
           end;
       else
-        Writeln('PIC: Don''t know to read with command ', Ord(CurrentCommand));
+        Writeln('PIC: Don''t know how to read with command ', Ord(CurrentCommand));
       end;
   end;
 end;
@@ -242,7 +242,7 @@ begin
     DataPort:
       case CurrentCommand of
         cmdNone:
-          Isr := AData;
+          Imr := AData;
 
         cmdInitialize:
           case FInitilizationWordIndex of
@@ -270,7 +270,7 @@ begin
             There's more about initialization yet it's irrelevent for now.
             Maybe add later.
           }
-          Writeln('PIC: Don''t know to write with command ', Ord(CurrentCommand));
+          Writeln('PIC: Don''t know how to write with command ', Ord(CurrentCommand));
         end;
   end;
 end;
