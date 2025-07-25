@@ -20,6 +20,7 @@ uses
   Keyboard, Dump, Timer, AppSettings, Cassette, FloppyDiskController;
 
 const
+  Version = '0.1';
   FPS = 50;
 
   SpeakerSampleRate = 44100;
@@ -33,7 +34,7 @@ const
   CartAddress   = $C0000;
   FdcRomAddress = $E0000;
 
-  DumpFile = '';
+  DumpFile = ''; // '/tmp/dos.dump';
   DumpBios = False;
 
   DiskSectorSize = 512;
@@ -63,6 +64,14 @@ type
   { TApplication }
 
   TApplication = class(TCustomApplication)
+  private
+    type
+      TOsdText = class
+        Text: String;
+        Color: TColorB;
+        Lifetime: Double; { In seconds }
+      end;
+      TOsdTextList = specialize TList<TOsdText>;
   private
     FFont: TFont;
     FGfxShader: TShader;
@@ -100,11 +109,7 @@ type
     FFloppyDiskStreams: specialize TArray<TStream>;
     FComputer: TMachine;
     FLastAudioSampleTime: Double;
-    FOsdText: record
-      Text: String;
-      Color: TColorB;
-      Lifetime: Integer; { In frames }
-    end;
+    FOsdTextItems: TOsdTextList;
     property Font: TFont read FFont write FFont;
     property GfxShader: TShader read FGfxShader write FGfxShader;
     property SpeakerAudioStream: TAudioStream read FSpeakerStream write FSpeakerStream;
@@ -116,6 +121,7 @@ type
     procedure Run;
     procedure RenderDisplay(AVideo: TVideoController);
     procedure RenderDebugger(ACpu: TCpu8088);
+    procedure RenderOsd;
     procedure BuildKeyboardMap;
     function HandleBootstrap(const Cpu: TCpu8088): Boolean;
     function HandleDiskIO: Boolean;
@@ -285,10 +291,17 @@ begin
 end;
 
 procedure TApplication.PrintOsd(AText: String; AColor: TColorB);
+var
+  Item: TOsdText;
 begin
-  FOsdText.Text := AText;
-  FOsdText.Color := Fade(AColor, 0.5);
-  FOsdText.Lifetime := FPS * 3;
+  Item := TOsdText.Create;
+  Item.Text := AText;
+  Item.Color := Fade(AColor, 0.5);
+  Item.Lifetime := 4;
+
+  FOsdTextItems.Insert(0, Item);
+  while FOsdTextItems.Count > 10 do
+    FOsdTextItems.Remove(FOsdTextItems.Last);
 end;
 
 procedure TApplication.PrintOsd(AText: String);
@@ -334,6 +347,7 @@ begin
 
   Settings.Save;
 
+  FreeAndNil(FOsdTextItems);
   FreeAndNil(FDebugger);
   FreeAndNil(FLogWriter);
   FreeAndNil(FDumpStream);
@@ -350,6 +364,9 @@ end;
 procedure TApplication.Initialize;
 begin
   inherited Initialize;
+
+  FOsdTextItems := TOsdTextList.Create;
+  PrintOsd(Format('POISK v%s', [Version]));
 
   HandleCommandLine;
 
@@ -578,7 +595,12 @@ begin
 
   while not WindowShouldClose do
   begin
-    FOsdText.Lifetime := Max(0, FOsdText.Lifetime - 1);
+    for I := (FOsdTextItems.Count - 1) downto 0 do
+    begin
+      FOsdTextItems[I].Lifetime := FOsdTextItems[I].Lifetime - GetFrameTime;
+      if FOsdTextItems[I].Lifetime <= 0 then
+        FOsdTextItems.Remove(FOsdTextItems[I]);
+    end;
 
     if IsKeyDown(KEY_F11) then
     begin
@@ -796,14 +818,8 @@ begin
 
       EndShaderMode;
 
-      if (FOsdText.Lifetime > 0) then
-      begin
-        DrawRectangle(0, 0, 640, 56, ColorAlpha(BLACK, Min(FOsdText.Lifetime / FPS, 0.8)));
-        DrawTextEx(Font,
-          PChar(FOsdText.Text),
-          Vector2Create(0, 0), 48, 0,
-          ColorAlpha(FOsdText.Color, Min(FOsdText.Lifetime / FPS, 1)));
-      end;
+      RenderOsd;
+
       {
       DrawTextEx(Font,
         PChar(Format('Audio buf: %.0f', [AudioBuffer.FilledPercentage * 100])),
@@ -1197,6 +1213,23 @@ begin
         PChar(Format('%.5x | %s', [Listing[I].Address, Listing[I].Contents])),
         Vector2Create(Left + 400, I * (FontSize + 8) + 120), CodeFontSize, 1,
         specialize IfThen<TColorB>(Listing[I].Address = Addr, YELLOW, GRAY));
+  end;
+end;
+
+procedure TApplication.RenderOsd;
+var
+  I: Integer;
+  Item: TOsdText;
+begin
+  for I := 0 to FOsdTextItems.Count - 1 do
+  begin
+    Item := FOsdTextItems[I];
+
+    { DrawRectangle(0, I*40, 400, 40, ColorAlpha(BLACK, Min(Item.Lifetime / 3, 0.8))); }
+    DrawTextEx(Font,
+      PChar(Item.Text),
+      Vector2Create(0, I * 40), 36, 0,
+      ColorAlpha(Item.Color, Min(Item.Lifetime / 3, 1)));
   end;
 end;
 
