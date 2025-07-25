@@ -344,29 +344,9 @@ end;
 procedure TPit8253.TChannel.SetOperatingMode(AValue: TOperatingMode);
 begin
   FOperatingMode := AValue;
-
-  case AValue of
-    omInterruptOnTerminalCount:
-      begin
-        Output := False;
-        State := specialize IfThen<TState>(
-          AccessMode = amHiByte, csWaitingHiByte, csWaitingLoByte);
-      end;
-
-    omRateGenerator,
-    omHardwareReTriggerableOneShot,
-    omSquareWaveGenerator,
-    omRateGeneratorDuplicate,
-    omSquareWaveGeneratorDuplicate:
-      begin
-        Output := True;
-        State := specialize IfThen<TState>(
-          AccessMode = amHiByte, csWaitingHiByte, csWaitingLoByte);
-      end;
-
-  else
-    raise Exception.CreateFmt('Implement me: operating mode %d', [Ord(AValue)]);
-  end;
+  Output := FOperatingMode <> omInterruptOnTerminalCount;
+  State := specialize IfThen<TState>(
+    AccessMode = amHiByte, csWaitingHiByte, csWaitingLoByte);
 end;
 
 procedure TPit8253.TChannel.SetGate(AValue: Boolean);
@@ -429,12 +409,21 @@ begin
         end;
       end;
 
-    else
-      raise Exception.CreateFmt(
-        'PIT operating mode %d: not implemented', [Ord(OperatingMode)]);
+    omSoftwareTriggeredStrobe:
+      Output := Value = 0;
+
+    omHardwareTriggeredStrobe:
+      begin
+        if (State = csWaitingGateHigh) and Gate then
+        begin
+          State := csCounting;
+          Value := InternalDivisor;
+        end;
+        Output := Value = 0;
+      end;
   end;
 
-  if Value < 0 then Value := IfThen(ReloadValue > 1, ReloadValue, 65535);
+  if Value < 0 then Value := 65536 - Value;
 end;
 
 procedure TPit8253.TChannel.WriteReloadValue(AValue: Byte);
@@ -453,25 +442,21 @@ begin
   case State of
     csValueSet:
       case OperatingMode of
-        omInterruptOnTerminalCount:
+        omInterruptOnTerminalCount,
+        omRateGenerator,
+        omRateGeneratorDuplicate:
           begin
             ReloadValue := NewReloadValue;
             Value := InternalDivisor;
             State := csCounting;
           end;
 
-        omHardwareReTriggerableOneShot:
+        omHardwareReTriggerableOneShot,
+        omHardwareTriggeredStrobe:
           begin
             ReloadValue := NewReloadValue;
             Value := InternalDivisor;
             State := csWaitingGateHigh;
-          end;
-
-        omRateGenerator:
-          begin
-            ReloadValue := NewReloadValue;
-            Value := InternalDivisor;
-            State := csCounting;
           end;
 
         omSquareWaveGenerator, omSquareWaveGeneratorDuplicate:
