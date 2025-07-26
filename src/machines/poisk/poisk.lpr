@@ -34,7 +34,7 @@ const
   CartAddress   = $C0000;
   FdcRomAddress = $E0000;
 
-  DumpFile = ''; // '/tmp/dos.dump';
+  DumpFile = '';
   DumpBios = False;
 
   DiskSectorSize = 512;

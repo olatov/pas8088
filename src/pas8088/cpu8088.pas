@@ -3673,16 +3673,8 @@ begin
 end;
 
 procedure TCpu8088.HandleFpuInstruction;
-var
-  ModRM: TModRM;
 begin
-  ModRM := FetchModRM;
-  case ModRM.Mod_ of
-    modMemNoDisp: if ModRM.Rm = %110 then FetchCodeWord;
-    modMem8: FetchCodeByte;
-    modMem16: FetchCodeWord;
-  else;
-  end;
+  FetchModRM;
 end;
 
 procedure TCpu8088.PushReg16(ARegIndex: TRegisters.TRegIndex16);
