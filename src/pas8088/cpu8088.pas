@@ -4728,12 +4728,23 @@ begin
     end;
   until False;
 
-  FCurrentInstruction.Repeating := (FCurrentInstruction.Repetition <> repNone)
-    and (Data in [$6C, $6D, $6E, $6F, $A4, $A5, $A6, $A7, $AA, $AB, $AC, $AD, $AE, $AF]);
+  if not (FCurrentInstruction.OpCode in
+      [$6C, $6D, $6E, $6F, $A4, $A5, $A6, $A7, $AA, $AB, $AC, $AD, $AE, $AF]) then
+    FCurrentInstruction.Repetition := repNone;
 
-  if (FCurrentInstruction.Repetition = repRep) and (Data in [$A6, $A7, $AE, $AF]) then
-    { CMPS and SCAS only }
-    FCurrentInstruction.Repetition := repRepE;
+  case FCurrentInstruction.Repetition of
+    repRep:
+      if FCurrentInstruction.OpCode in [$A6, $A7, $AE, $AF] then
+        { CMPS and SCAS only }
+        FCurrentInstruction.Repetition := repRepE;
+
+    repRepE, repRepNE:
+      if not (FCurrentInstruction.OpCode in [$A6, $A7, $AE, $AF]) then
+        FCurrentInstruction.Repetition := repRep;
+  else;
+  end;
+
+  FCurrentInstruction.Repeating := (FCurrentInstruction.Repetition <> repNone)
 end;
 
 function TCpu8088.GetIOBus: IIOBus;
