@@ -185,10 +185,10 @@ begin
   if Channel.CountingMode = cmBcd then
     raise Exception.Create('BCD counting mode: not implemented');
 
-  {
-  Writeln('Channel ', ACommand.Channel, ' set to ', ACommand.OperatingMode, ' mode. ' +
-    'Acc mode: ', ACommand.AccessMode);
-  }
+  {$ifdef TimerDebug}
+    Writeln('Channel ', ACommand.Channel, ' set to ', ACommand.OperatingMode, ' mode. ' +
+      'Acc mode: ', ACommand.AccessMode);
+  {$endif}
 
   Channel.AccessMode := ACommand.AccessMode;
   Channel.OperatingMode := ACommand.OperatingMode;
@@ -285,7 +285,6 @@ begin
     $40..$42:
       begin
         AData := FChannels[AAddress - $40].ReadValue;
-        { Writeln('Read channel ', AAddress - $40, ': ', AData); }
         Result := True;
       end;
 
@@ -297,8 +296,10 @@ begin
 
     $61:
       begin
-        AData := IfThen(FChannels[2].Output, $20, 0) { ? }
-          or IfThen(Speaker.GateInputs[1], $02, 0);
+        AData := 0;
+        AData.Bits[0] := FChannels[2].Gate;
+        AData.Bits[1] := Speaker.GateInputs[1];
+        AData.Bits[5] := FChannels[2].Output;
         Result := True;
       end;
 
@@ -316,25 +317,14 @@ end;
 procedure TPit8253.OnIOWrite(Sender: IIOBusDevice; AAddress: Word; AData: Byte);
 begin
   case AAddress of
-    $40..$42:
-      begin
-        FChannels[AAddress - $40].WriteReloadValue(AData);
-        { Writeln('Channel ', AAddress - $40, ', reload val: ', AData); }
-      end;
+    $40..$42: FChannels[AAddress - $40].WriteReloadValue(AData);
 
     $43: WriteCommandPort(TCommand(AData));
 
     $61:
       begin
-        //Writeln('Wrote to 61H: ', IntToHex(AData), 'h');
-        {
-          This is supposed to be bit 0 but that doesn't work right.
-          I've no ideas.
-          FChannels[2].Gate := (AData and 1) <> 0;
-        }
-        FChannels[2].Gate := True;
-
-        Speaker.GateInputs[1] := (AData and 2) <> 0;
+        Speaker.GateInputs[1] := AData.Bits[1];
+        FChannels[2].Gate := AData.Bits[0];
       end;
   end;
 end;
@@ -401,7 +391,7 @@ begin
 
     omSquareWaveGenerator, omSquareWaveGeneratorDuplicate:
       begin
-        Dec(Value);  { This mode decrements 2x }
+        if (Gate and (State = csCounting)) then Dec(Value);  { This mode decrements 2x }
         if Value <= 0 then
         begin
           Output := not Output;
@@ -463,6 +453,9 @@ begin
           begin
             ReloadValue := NewReloadValue;
             State := csCounting;
+            {$IfDef TimerDebug}
+              Writeln('New reload value: ', ReloadValue);
+            {$endif}
           end;
       end;
   end;
