@@ -1698,41 +1698,13 @@ begin
   IOBus.InvokeWrite(Self, AAddress, AData);
 end;
 
-{$J+}
 function TCpu8088.ReadIOByte(AAddress: Word): Byte;
-const
-  C68: Integer = 0;
-  C28: Integer = 0;
-var
-  Dat68: array of Byte = (192, 200, 40);
-  Dat28: array of Byte = (0, 0, 0, 255);
 begin
   IOBus.InvokeRead(Self, AAddress, Result);
-  Exit;
-  //Exit($FF);
-  Result := $FF;
-
-
-  case AAddress of
-    $28:
-      begin
-        Result := Dat68[C68 mod Length(Dat68)];
-        Inc(C68);
-      end;
-
-    $68:
-      begin
-        Result := Dat28[C28 mod Length(Dat28)];
-        Inc(C28);
-      end;
-  end;
-
-  //if AAddress = $68 then Result := 192;
-  Writeln(IntToHex(AAddress), ': ', Result);
 end;
 
-function TCpu8088.OnIORead(ADevice: IIOBusDevice; AAddress: Word; out
-  AData: Byte): Boolean;
+function TCpu8088.OnIORead(
+  ADevice: IIOBusDevice; AAddress: Word; out AData: Byte): Boolean;
 begin
   { Nothing reads from the CPU }
   Result := False;
