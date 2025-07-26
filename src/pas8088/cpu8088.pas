@@ -552,6 +552,7 @@ type
     procedure Tick;
     procedure FetchInstruction;
     property CurrentAddress: TPhysicalAddress read GetCurrentAddress;
+    property CurrentInstruction: TInstruction read FCurrentInstruction;
 
     { IO bus device API }
     function GetIOBus: IIOBus;
@@ -1517,6 +1518,7 @@ begin
   if FOnBeforeInstruction = AValue then Exit;
   FOnBeforeInstruction := AValue;
 end;
+
 
 procedure TCpu8088.SetWaitStates(AValue: Integer);
 begin

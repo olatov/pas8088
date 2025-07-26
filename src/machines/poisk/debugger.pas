@@ -6,7 +6,7 @@ interface
 
 uses
   Classes, SysUtils, FPHttpServer, FPJson, JsonParser, HttpRoute, HttpDefs,
-  Hardware, Cpu8088;
+  Hardware, Cpu8088, Machine;
 
 type
 
@@ -19,7 +19,7 @@ type
       { TServer }
 
       TServer = class(TThread)
-        Cpu: TCpu8088;
+        Machine: TMachine;
         Router: THTTPRouter;
         constructor Create(
           CreateSuspended: Boolean; const StackSize: SizeUInt = DefaultStackSize);
@@ -31,21 +31,30 @@ type
           var AResponse : TFPHTTPConnectionResponse);
 
         procedure GetRegisters(ARequest: TRequest; AResponse: TResponse);
+        procedure GetCurrentInstruction(ARequest: TRequest; AResponse: TResponse);
+        procedure SendJson(var AResponse: TResponse; AContent: TJSONData);
       private
-        procedure GetMemory(ARequest: TRequest; AResponse: TResponse);
         procedure NotFound(ARequest: TRequest; AResponse: TResponse);
+        procedure GetMachine(ARequest: TRequest; AResponse: TResponse);
+        procedure GetMemory(ARequest: TRequest; AResponse: TResponse);
+        procedure PostBreak(ARequest: TRequest; AResponse: TResponse);
+        procedure PostBreakOn(ARequest: TRequest; AResponse: TResponse);
+        procedure PostResume(ARequest: TRequest; AResponse: TResponse);
+        procedure PostStep(ARequest: TRequest; AResponse: TResponse);
       end;
+    const
+      JsonContentType = 'application/json; charset=utf8;';
   private
     FServer: TServer;
     procedure SetServer(AValue: TServer);
   public
     const Port = 3456;
   private
-    FCpu: TCpu8088;
+    FMachine: TMachine;
+    procedure SetMachine(AValue: TMachine);
     property Server: TServer read FServer write SetServer;
-    procedure SetCpu(AValue: TCpu8088);
   public
-    property Cpu: TCpu8088 read FCpu write SetCpu;
+    property Machine: TMachine read FMachine write SetMachine;
     destructor Destroy; override;
     procedure Start;
     procedure Stop;
@@ -61,10 +70,10 @@ begin
   FServer := AValue;
 end;
 
-procedure TWebDebugger.SetCpu(AValue: TCpu8088);
+procedure TWebDebugger.SetMachine(AValue: TMachine);
 begin
-  if FCpu = AValue then Exit;
-  FCpu := AValue;
+  if FMachine = AValue then Exit;
+  FMachine := AValue;
 end;
 
 destructor TWebDebugger.Destroy;
@@ -76,7 +85,7 @@ end;
 procedure TWebDebugger.Start;
 begin
   Server := TServer.Create(True);
-  Server.Cpu := Cpu;
+  Server.Machine := Machine;
   Server.FreeOnTerminate := True;
   Server.Start;
 end;
@@ -118,8 +127,14 @@ end;
 
 procedure TWebDebugger.TServer.RegisterRoutes;
 begin
+  Router.RegisterRoute('/', rmGet, @GetMachine);
   Router.RegisterRoute('/memory', rmGet, @GetMemory);
-  Router.RegisterRoute('/registers', rmGet, @GetRegisters);
+  Router.RegisterRoute('/cpu/registers', rmGet, @GetRegisters);
+  Router.RegisterRoute('/cpu/current-instruction', rmGet, @GetCurrentInstruction);
+  Router.RegisterRoute('/break', rmPost, @PostBreak);
+  Router.RegisterRoute('/break-on', rmPost, @PostBreakOn);
+  Router.RegisterRoute('/step', rmPost, @PostStep);
+  Router.RegisterRoute('/resume', rmPost, @PostResume);
   Router.RegisterRoute('', @NotFound, True);
 end;
 
@@ -136,60 +151,137 @@ begin
   AResponse.Content := 'Not found';
 end;
 
+procedure TWebDebugger.TServer.GetMachine(
+  ARequest: TRequest; AResponse: TResponse);
+var
+  Result: TJsonObject = Nil;
+begin
+  Result := TJSONObject.Create([
+    'Ticks', Machine.Ticks,
+    'ExecutionMode', Ord(Machine.ExecutionMode)
+  ]);
+  try
+    SendJson(AResponse, Result);
+  finally
+    FreeAndNil(Result);
+  end;
+end;
+
 procedure TWebDebugger.TServer.GetMemory(ARequest: TRequest; AResponse: TResponse);
+  function TryParseParams(ARequest: TRequest; out AAddress: Integer; out ALength: Integer): Boolean;
+  begin
+    Result := Integer.TryParse(ARequest.QueryFields.Values['address'], AAddress)
+      and Integer.TryParse(ARequest.QueryFields.Values['length'], ALength);
+  end;
+
 var
   Address: TPhysicalAddress;
   Length_, I: Integer;
   Result: TJSONArray;
   Data: Byte;
 begin
-  try
-    Address := StrToInt(ARequest.QueryFields.Values['address']);
-    Length_ := StrToInt(ARequest.QueryFields.Values['length']);
-  except
+  if not TryParseParams(ARequest, Address, Length_) then
+  begin
     AResponse.SetStatus(400);
     Exit;
   end;
 
   Result := TJSONArray.Create;
-  for I := 1 to Length_ do
+  try
+    for I := 0 to Length_ - 1 do
+    begin
+      Machine.MemoryBus.InvokeRead(Nil, Address + I, Data);
+      Result.Add(Data);
+    end;
+
+    SendJson(AResponse, Result);
+  finally
+    FreeAndNil(Result);
+  end;
+end;
+
+procedure TWebDebugger.TServer.PostBreak(ARequest: TRequest;
+  AResponse: TResponse);
+begin
+  Machine.Break_;
+  AResponse.SetStatus(204);
+end;
+
+procedure TWebDebugger.TServer.PostBreakOn(ARequest: TRequest;
+  AResponse: TResponse);
+var
+  Address: TPhysicalAddress;
+begin
+  if not Integer.TryParse(ARequest.QueryFields.Values['address'], Address) then
   begin
-    Cpu.MemoryBus.InvokeRead(Nil, Address + I, Data);
-    Result.Add(Data);
+    AResponse.SetStatus(400);
+    Exit;
   end;
 
-  AResponse.Content := Result.AsJSON;
-  AResponse.ContentType := 'application/json';
-  FreeAndNil(Result);
+  Machine.BreakOn(Address);
+end;
+
+procedure TWebDebugger.TServer.PostResume(ARequest: TRequest; AResponse: TResponse);
+begin
+  Machine.Resume;
+  AResponse.SetStatus(204);
+end;
+
+procedure TWebDebugger.TServer.PostStep(ARequest: TRequest; AResponse: TResponse);
+begin
+  Machine.Step;
+  AResponse.SetStatus(204);
 end;
 
 procedure TWebDebugger.TServer.GetRegisters(ARequest: TRequest; AResponse: TResponse);
 var
   Result: TJSONObject;
+  Registers: TRegisters;
 begin
+  Registers := Machine.Cpu.Registers;
   Result := TJSONObject.Create([
-    'ax', Cpu.Registers.AX,
-    'bx', Cpu.Registers.BX,
-    'cx', Cpu.Registers.CX,
-    'dx', Cpu.Registers.DX,
+    'AX', Registers.AX,
+    'BX', Registers.BX,
+    'CX', Registers.CX,
+    'DX', Registers.DX,
 
-    'bp', Cpu.Registers.BP,
-    'sp', Cpu.Registers.SP,
-    'si', Cpu.Registers.SI,
-    'di', Cpu.Registers.DI,
+    'BP', Registers.BP,
+    'SP', Registers.SP,
+    'SI', Registers.SI,
+    'DI', Registers.DI,
 
-    'cs', Cpu.Registers.BP,
-    'ds', Cpu.Registers.SP,
-    'ss', Cpu.Registers.SI,
-    'es', Cpu.Registers.DI,
+    'CS', Registers.CS,
+    'DS', Registers.DS,
+    'SS', Registers.SS,
+    'ES', Registers.ES,
 
-    'ip', Cpu.Registers.IP,
-    'flags', Cpu.Registers.Flags.GetWord
+    'IP', Registers.IP,
+    'Flags', Registers.Flags.GetWord
   ]);
 
-  AResponse.Content := Result.FormatJSON;
-  AResponse.ContentType := 'application/json';
+  SendJson(AResponse, Result);
   FreeAndNil(Result);
+end;
+
+procedure TWebDebugger.TServer.GetCurrentInstruction(ARequest: TRequest;
+  AResponse: TResponse);
+var
+  Result: TJSONObject;
+begin
+  Result := TJSONObject.Create([
+    'CS', Machine.Cpu.CurrentInstruction.CS,
+    'IP', Machine.Cpu.CurrentInstruction.IP,
+    'OpCode', Machine.Cpu.CurrentInstruction.OpCode,
+    'Repeating', Machine.Cpu.CurrentInstruction.Repeating
+  ]);
+  SendJson(AResponse, Result);
+  FreeAndNil(Result);
+end;
+
+procedure TWebDebugger.TServer.SendJson(var AResponse: TResponse; AContent: TJSONData);
+begin
+  AResponse.Content := AContent.AsJSON;
+  AResponse.ContentType := JsonContentType;
 end;
 
 end.

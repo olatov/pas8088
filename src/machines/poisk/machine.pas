@@ -13,24 +13,37 @@ type
   { TMachine }
 
   TMachine = class(TComponent)
+  public
+    type
+      TExecutionMode = (emNormal, emStepByStep);
   private
     FCassetteDrive: TCassetteDrive;
     FCpu: TCpu8088;
+    FExecutionMode: TExecutionMode;
     FFloppyDiskController: IFloppyDiskController;
     FInterrptController: IInterruptController;
     FIOBus: IIOBus;
     FMemoryBus: IMemoryBus;
+    FTicks: QWord;
     FVideo: TVideoController;
     FTimer: TPit8253;
     FMemory: specialize TArray<IMemoryBusDevice>;
     procedure SetCassetteDrive(AValue: TCassetteDrive);
     procedure SetCpu(AValue: TCpu8088);
+    procedure SetExecutionMode(AValue: TExecutionMode);
     procedure SetFloppyDiskController(AValue: IFloppyDiskController);
     procedure SetInterrptController(AValue: IInterruptController);
     procedure SetIOBus(AValue: IIOBus);
     procedure SetMemoryBus(AValue: IMemoryBus);
     procedure OnTimerOutputChange(ASender: TObject; AChannel: Integer; AValue: Boolean);
+    procedure SetTicks(AValue: QWord);
   published
+    property Ticks: QWord read FTicks write SetTicks;
+    property ExecutionMode: TExecutionMode read FExecutionMode write SetExecutionMode;
+    procedure Break_;
+    procedure BreakOn(AAddress: TPhysicalAddress);
+    procedure Resume;
+    procedure Step;
     property Cpu: TCpu8088 read FCpu write SetCpu;
     property MemoryBus: IMemoryBus read FMemoryBus write SetMemoryBus;
     property IOBus: IIOBus read FIOBus write SetIOBus;
@@ -54,6 +67,12 @@ procedure TMachine.SetCpu(AValue: TCpu8088);
 begin
   if FCpu = AValue then Exit;
   FCpu := AValue;
+end;
+
+procedure TMachine.SetExecutionMode(AValue: TExecutionMode);
+begin
+  if FExecutionMode = AValue then Exit;
+  FExecutionMode := AValue;
 end;
 
 procedure TMachine.SetFloppyDiskController(AValue: IFloppyDiskController);
@@ -98,8 +117,16 @@ begin
   end;
 end;
 
+procedure TMachine.SetTicks(AValue: QWord);
+begin
+  if FTicks = AValue then Exit;
+  FTicks := AValue;
+end;
+
 procedure TMachine.Tick;
 begin
+  Inc(FTicks);
+
   if Assigned(InterrptController) then InterrptController.Tick;
   Cpu.Tick;
   if Assigned(Timer) then Timer.Tick;
@@ -119,8 +146,43 @@ begin
   for I := 1 to ATicks do Tick;
 end;
 
+procedure TMachine.Step;
+begin
+  repeat
+    Tick;
+  until Cpu.WaitStates <= 0;
+end;
+
+procedure TMachine.Break_;
+begin
+  ExecutionMode := emStepByStep;
+end;
+
+procedure TMachine.Resume;
+begin
+  ExecutionMode := emNormal;
+end;
+
+procedure TMachine.BreakOn(AAddress: TPhysicalAddress);
+begin
+  while True do
+  begin
+    case Cpu.CurrentInstruction.Repeating of
+      True:
+        if GetPhysicalAddress(Cpu.CurrentInstruction.CS, Cpu.CurrentInstruction.IP) = AAddress then Break;
+
+      False:
+        if GetPhysicalAddress(Cpu.Registers.CS, Cpu.Registers.IP) = AAddress then Break;
+    end;
+
+    Step;
+  end;
+  Break_;
+end;
+
 procedure TMachine.Reset;
 begin
+  Ticks := 0;
   Cpu.Reset;
   Timer.Reset;
 end;

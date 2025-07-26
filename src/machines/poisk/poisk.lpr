@@ -607,7 +607,7 @@ begin
   Computer.Cpu.OnAfterInstruction := @OnAfterInstruction;
   Computer.Cpu.OnBeforeExecution := @OnBeforeExecution;
 
-  Debugger.Cpu := Computer.Cpu;
+  Debugger.Machine := Computer;
   Debugger.Start;
 
   LinesLoc := GetShaderLocation(GfxShader, 'lines');
@@ -718,7 +718,7 @@ begin
     try
       for I := 0 to CyclesPerFrame - 1 do
       begin
-        if Paused then Break;
+        if Paused or (Computer.ExecutionMode <> emNormal) then Break;
 
         VirtualTime := VirtualTime + TimePerCycle;
         Computer.Tick;
@@ -1204,7 +1204,7 @@ begin
   }
 
   if not Assigned(FDumpStream) then Exit;
-  if not DumpBios and (AInstruction.CS > $8000) then Exit;
+  if not DumpBios and (AInstruction.CS > $A000) then Exit;
 
   //if AInstruction.CS <> $0070 then Exit;
 
