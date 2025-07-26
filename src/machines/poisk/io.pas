@@ -47,7 +47,6 @@ begin
   for Device in FDevices do
     if (Device <> ADevice)
         and Device.OnIORead(ADevice, AAddress, AData) then Exit;
-  WriteLn(Format('Read unhandled port %x', [AAddress]));
   AData := $FF;
 end;
 
