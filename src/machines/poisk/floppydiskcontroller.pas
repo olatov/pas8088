@@ -10,14 +10,13 @@ uses
 
 type
 
-  { TFloppyDiskController }
+  TDiskGeometry = record
+    Cylinders, Heads, Sectors, SectorSize: Integer;
+  end;
 
-  TFloppyDiskController = class(TComponent, IMemoryBusDevice, IFloppyDiskController)
-  public
-    type
-      TDiskGeometry = record
-        Cylinders, Heads, Sectors, SectorSize: Integer;
-      end;
+  { TGenericDiskController }
+
+  TGenericDiskController = class(TComponent, IMemoryBusDevice, IGenericDiskController)
   public
     const
       DefaultDiskGeometry: TDiskGeometry = (
@@ -68,11 +67,86 @@ type
       TPhysicalAddress; AData: Byte);
   end;
 
+  { TFloppyDiskController }
+
+  TFloppyDiskController = class(TComponent, IIOBusDevice)
+  private
+    type
+      TCommand = (
+        cmdNone = 0, cmdSeek = $1C, cmdStep = $48, cmdUnknown = $68,
+        cmdRead = $80, cmdWrite = $A0, cmdWrTrack = $F0
+      );
+
+      TControlRegister = bitpacked record
+        DriveSelect0: 0..1;
+        DriveSelect1: 0..1;
+        MotorOn0: 0..1;
+        MotorOn1: 0..1;
+        HeadSelect: 0..1;
+        DoubleDensity: 0..1;
+        FdcReset: 0..1;
+        Unused: 0..1;
+      end;
+
+    const
+      ControlStatIOPort = $C0;
+      CylinderIOPort = $C1;
+      SectorIOPort = $C2;
+      DataIOPort = $C3;
+      IntrQIOPort = $C4;
+      MotorIOPort = $C5;
+
+      Geometry: TDiskGeometry = (
+        Cylinders: 80;
+        Heads: 2;
+        Sectors: 9;
+        SectorSize: 512;
+      );
+      Drives = 2;
+
+    procedure SetCurrentCommand(AValue: TCommand);
+  private
+    FIOBus: IIOBus;
+    FCurrentCommand: TCommand;
+    FCylinderRegister: Integer;
+    FSectorRegister: Integer;
+    FDataRegister: Byte;
+    FMotorRegister: Byte;
+    FControlRegister: TControlRegister;
+    FDisks: array[0..Drives] of TStream;
+    FBuffer: record
+      Data: array of Byte;
+      Index: Integer;
+    end;
+    function GetCurrentDisk: TStream;
+    procedure SeekSector;
+    procedure Step;
+    property CurrentCommand: TCommand read FCurrentCommand write SetCurrentCommand;
+    procedure WriteControlStat(AData: Byte);
+    function ReadControlStat: Byte;
+    procedure ReadByte;
+    procedure WriteByte;
+  public
+    constructor Create(AOwner: TComponent); override;
+    property CurrentDisk: TStream read GetCurrentDisk;
+    procedure InsertDisk(ADrive: Integer; ADisk: TStream);
+    procedure EjectDisk(ADrive: Integer);
+    procedure Reset;
+
+    function GetIOBus: IIOBus;
+    procedure SetIOBus(AValue: IIOBus);
+    procedure WriteIOByte(AAddress: Word; AData: Byte);
+    function ReadIOByte(AAddress: Word): Byte;
+    property IOBus: IIOBus read GetIOBus write SetIOBus;
+    function OnIORead(ADevice: IIOBusDevice; AAddress: Word; out AData: Byte): Boolean;
+    procedure OnIOWrite(Sender: IIOBusDevice; AAddress: Word; AData: Byte);
+  end;
+
 implementation
 
-{ TFloppyDiskController }
+{ TGenericDiskController }
 
-function TFloppyDiskController.ChsToLogical(
+function TGenericDiskController.ChsToLogical(
   Cylinder, Head, Sector: Integer): Integer;
 begin
   Result :=
@@ -81,13 +155,13 @@ begin
     + Sector - 1;
 end;
 
-procedure TFloppyDiskController.SetDiskGeometry(AValue: TDiskGeometry);
+procedure TGenericDiskController.SetDiskGeometry(AValue: TDiskGeometry);
 begin
   FDiskGeometry := AValue;
   SetLength(FBuffer, DiskGeometry.SectorSize);
 end;
 
-procedure TFloppyDiskController.Seek(ADriveNumber, ALogicalSector: Integer);
+procedure TGenericDiskController.Seek(ADriveNumber, ALogicalSector: Integer);
 begin
   if not Assigned(FDiskStreams[ADriveNumber]) then Exit;
 
@@ -95,7 +169,7 @@ begin
     ALogicalSector * (DiskGeometry.SectorSize), soBeginning);
 end;
 
-function TFloppyDiskController.TryWriteSectorFromBuffer(
+function TGenericDiskController.TryWriteSectorFromBuffer(
   ADriveNumber: Integer): Boolean;
 var
   Disk: TStream;
@@ -109,7 +183,7 @@ begin
   Result := True;
 end;
 
-function TFloppyDiskController.TryReadSectorToBuffer(
+function TGenericDiskController.TryReadSectorToBuffer(
   ADriveNumber: Integer): Boolean;
 var
   Disk: TStream;
@@ -123,7 +197,7 @@ begin
   Result := True;
 end;
 
-procedure TFloppyDiskController.LoadBufferFromMemory(ASegment, AOffset: Word);
+procedure TGenericDiskController.LoadBufferFromMemory(ASegment, AOffset: Word);
 var
   I: Integer;
 begin
@@ -132,7 +206,7 @@ begin
       GetPhysicalAddress(ASegment, AOffset + I), FBuffer[I]);
 end;
 
-procedure TFloppyDiskController.SaveBufferToMemory(ASegment, AOffset: Word);
+procedure TGenericDiskController.SaveBufferToMemory(ASegment, AOffset: Word);
 var
   I: Integer;
 begin
@@ -141,13 +215,13 @@ begin
       GetPhysicalAddress(ASegment, AOffset + I), FBuffer[I]);
 end;
 
-procedure TFloppyDiskController.EnsureDriveNumberIsValid(ADriveNumber: Integer);
+procedure TGenericDiskController.EnsureDriveNumberIsValid(ADriveNumber: Integer);
 begin
   if not InRange(ADriveNumber, 0, High(FDiskStreams)) then
     raise Exception.CreateFmt('Invalid drive number: %d', [ADriveNumber]);
 end;
 
-function TFloppyDiskController.VerifyChs(
+function TGenericDiskController.VerifyChs(
   ACylinder, AHead, ASector: Integer): Boolean;
 begin
   Result := InRange(ACylinder, 0, DiskGeometry.Cylinders - 1)
@@ -159,7 +233,7 @@ begin
       (DiskGeometry.Cylinders * DiskGeometry.Heads * DiskGeometry.Sectors) - 1);
 end;
 
-constructor TFloppyDiskController.Create(
+constructor TGenericDiskController.Create(
   AOwner: TComponent; DriveCount: Integer);
 begin
   inherited Create(AOwner);
@@ -167,20 +241,20 @@ begin
   DiskGeometry := DefaultDiskGeometry;
 end;
 
-procedure TFloppyDiskController.InsertDisk(
+procedure TGenericDiskController.InsertDisk(
   ADriveNumber: Integer; DiskStream: TStream);
 begin
   EnsureDriveNumberIsValid(ADriveNumber);
   FDiskStreams[ADriveNumber] := DiskStream;
 end;
 
-procedure TFloppyDiskController.EjectDisk(ADriveNumber: Integer);
+procedure TGenericDiskController.EjectDisk(ADriveNumber: Integer);
 begin
   EnsureDriveNumberIsValid(ADriveNumber);
   FDiskStreams[ADriveNumber] := Nil;
 end;
 
-function TFloppyDiskController.Reset: Boolean;
+function TGenericDiskController.Reset: Boolean;
 var
   DriveNumber: Integer;
 begin
@@ -190,7 +264,7 @@ begin
   Result := True;
 end;
 
-function TFloppyDiskController.ReadSectors(
+function TGenericDiskController.ReadSectors(
   ADriveNumber, ACylinder, AHead, ASector, ASectorCount: Integer;
   ASegment, AOffset: Word): Boolean;
 var
@@ -214,7 +288,7 @@ begin
   Result := True;
 end;
 
-function TFloppyDiskController.WriteSectors(
+function TGenericDiskController.WriteSectors(
   ADriveNumber, ACylinder, AHead, ASector, ASectorCount:Integer;
   ASegment, AOffset: Word): Boolean;
 var
@@ -238,38 +312,264 @@ begin
   Result := True;
 end;
 
-function TFloppyDiskController.GetMemoryBus: IMemoryBus;
+function TGenericDiskController.GetMemoryBus: IMemoryBus;
 begin
   Result := FMemoryBus;
 end;
 
-procedure TFloppyDiskController.SetMemoryBus(AValue: IMemoryBus);
+procedure TGenericDiskController.SetMemoryBus(AValue: IMemoryBus);
 begin
   FMemoryBus := AValue;
 end;
 
-procedure TFloppyDiskController.WriteMemoryByte(
+procedure TGenericDiskController.WriteMemoryByte(
   AAddress: TPhysicalAddress; AData: Byte);
 begin
 
 end;
 
-function TFloppyDiskController.ReadMemoryByte(AAddress: TPhysicalAddress): Byte;
+function TGenericDiskController.ReadMemoryByte(AAddress: TPhysicalAddress): Byte;
 begin
   Result := 0;
 end;
 
-function TFloppyDiskController.OnMemoryRead(Sender: IMemoryBusDevice;
+function TGenericDiskController.OnMemoryRead(Sender: IMemoryBusDevice;
   AAddress: TPhysicalAddress; out AData: Byte): Boolean;
 begin
   Result := False;
 end;
 
-procedure TFloppyDiskController.OnMemoryWrite(Sender: IMemoryBusDevice;
+procedure TGenericDiskController.OnMemoryWrite(Sender: IMemoryBusDevice;
   AAddress: TPhysicalAddress; AData: Byte);
 begin
 
 end;
+
+{ TFloppyDiskController }
+
+procedure TFloppyDiskController.SetCurrentCommand(AValue: TCommand);
+begin
+  if FCurrentCommand = AValue then Exit;
+  FCurrentCommand := AValue;
+end;
+
+function TFloppyDiskController.GetCurrentDisk: TStream;
+begin
+  if FControlRegister.DriveSelect0 = 1 then
+    Result := FDisks[0]
+  else if FControlRegister.DriveSelect1 = 1 then
+    Result := FDisks[1]
+  else
+    Result := Nil;
+end;
+
+procedure TFloppyDiskController.SeekSector;
+var
+  Sector, LogicalSector: Integer;
+begin
+  if not Assigned(CurrentDisk) then Exit;
+  Sector := EnsureRange(FSectorRegister, 1, Geometry.Sectors);
+
+  LogicalSector := FCylinderRegister * (Geometry.Heads * Geometry.Sectors)
+      + FControlRegister.HeadSelect * Geometry.Sectors
+      + Sector - 1;
+
+  CurrentDisk.Seek(Geometry.SectorSize * LogicalSector, soBeginning);
+end;
+
+procedure TFloppyDiskController.Step;
+begin
+
+end;
+
+procedure TFloppyDiskController.WriteControlStat(AData: Byte);
+begin
+  CurrentCommand := TCommand(AData);
+
+  case CurrentCommand of
+    cmdSeek: begin end;
+
+    cmdRead, cmdWrite:
+      begin
+        SeekSector;
+        FBuffer.Index := 0;
+      end;
+
+    cmdStep: Step;
+  end;
+end;
+
+function TFloppyDiskController.ReadControlStat: Byte;
+begin
+  Result := 0;
+
+  case CurrentCommand of
+    cmdRead, cmdWrite:
+      begin
+        { If timeout then set bit 2 }
+      end;
+
+    cmdStep:
+      Result := 1;
+
+  else
+    Result.Bits[2] := Assigned(CurrentDisk)
+      and (CurrentDisk.Position <
+        (Geometry.Heads * Geometry.Sectors * Geometry.SectorSize));
+  end;
+end;
+
+procedure TFloppyDiskController.ReadByte;
+begin
+  if not Assigned(CurrentDisk)
+      or (FBuffer.Index >= Geometry.SectorSize)
+      or (CurrentDisk.Position >= CurrentDisk.Size) then Exit;
+
+  if FBuffer.Index = 0 then
+    CurrentDisk.Read(FBuffer.Data[0], Length(FBuffer.Data));
+
+  FDataRegister := FBuffer.Data[FBuffer.Index];
+  Inc(FBuffer.Index);
+end;
+
+procedure TFloppyDiskController.WriteByte;
+begin
+  if not Assigned(CurrentDisk)
+      or (FBuffer.Index >= Geometry.SectorSize)
+      or (CurrentDisk.Position >= CurrentDisk.Size) then Exit;
+
+  FBuffer.Data[FBuffer.Index] := FDataRegister;
+  Inc(FBuffer.Index);
+
+  if FBuffer.Index >= Length(FBuffer.Data) then
+    CurrentDisk.Write(FBuffer.Data[0], Length(FBuffer.Data));
+end;
+
+constructor TFloppyDiskController.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  SetLength(FBuffer.Data, Geometry.SectorSize);
+end;
+
+procedure TFloppyDiskController.InsertDisk(ADrive: Integer; ADisk: TStream);
+begin
+  FDisks[ADrive] := ADisk;
+  ADisk.Position := 512 * 1000;
+end;
+
+procedure TFloppyDiskController.EjectDisk(ADrive: Integer);
+begin
+  FDisks[ADrive] := Nil;
+end;
+
+procedure TFloppyDiskController.Reset;
+begin
+  if Assigned(CurrentDisk) then
+    CurrentDisk.Seek(0, soBeginning);
+end;
+
+function TFloppyDiskController.GetIOBus: IIOBus;
+begin
+  Result := FIOBus;
+end;
+
+procedure TFloppyDiskController.SetIOBus(AValue: IIOBus);
+begin
+  FIOBus := AValue;
+end;
+
+procedure TFloppyDiskController.WriteIOByte(AAddress: Word; AData: Byte);
+begin
+
+end;
+
+function TFloppyDiskController.ReadIOByte(AAddress: Word): Byte;
+begin
+
+end;
+
+function TFloppyDiskController.OnIORead(
+  ADevice: IIOBusDevice; AAddress: Word; out AData: Byte): Boolean;
+begin
+  case AAddress of
+    ControlStatIOPort:
+      begin
+        AData := ReadControlStat;
+        Result := True;
+      end;
+
+    CylinderIOPort:
+      begin
+        AData := FCylinderRegister;
+        Result := True;
+      end;
+
+    SectorIOPort:
+      begin
+        AData := FSectorRegister;
+        Result := True;
+      end;
+
+    DataIOPort:
+      begin
+        case CurrentCommand of
+          cmdRead:
+            begin
+              ReadByte;
+              AData := FDataRegister;
+            end;
+        end;
+        Result := True;
+      end;
+
+    IntrQIOPort:
+      begin
+        case CurrentCommand of
+          cmdRead, cmdWrite:
+            AData := IfThen(FBuffer.Index < Geometry.SectorSize, 1, 0);
+        end;
+        Result := True;
+      end;
+
+    MotorIOPort:
+      begin
+        AData := FMotorRegister;
+        Result := True;
+      end;
+  end;
+end;
+
+procedure TFloppyDiskController.OnIOWrite(
+  Sender: IIOBusDevice; AAddress: Word; AData: Byte);
+begin
+  case AAddress of
+    ControlStatIOPort: WriteControlStat(AData);
+
+    CylinderIOPort: FCylinderRegister := AData;
+
+    SectorIOPort: FSectorRegister := AData;
+
+    DataIOPort:
+      begin
+        case CurrentCommand of
+          cmdWrite:
+            begin
+              FDataRegister := AData;
+              WriteByte;
+            end;
+        end;
+      end;
+
+    IntrQIOPort:
+      begin
+        FControlRegister := TControlRegister(AData);
+        CurrentCommand := cmdNone;
+        if FControlRegister.FdcReset = 1 then Reset;
+      end;
+  end;
+end;
+
+{ TFloppyDiskController }
 
 end.
 

@@ -6,7 +6,7 @@ interface
 
 uses
   Classes, SysUtils,
-  Cpu8088, VideoController, Hardware, Timer, Cassette;
+  Cpu8088, VideoController, Hardware, Timer, Cassette, FloppyDiskController;
 
 type
 
@@ -20,7 +20,7 @@ type
     FCassetteDrive: TCassetteDrive;
     FCpu: TCpu8088;
     FExecutionMode: TExecutionMode;
-    FFloppyDiskController: IFloppyDiskController;
+    FFloppyDiskController: TFloppyDiskController;
     FInterrptController: IInterruptController;
     FIOBus: IIOBus;
     FMemoryBus: IMemoryBus;
@@ -31,7 +31,7 @@ type
     procedure SetCassetteDrive(AValue: TCassetteDrive);
     procedure SetCpu(AValue: TCpu8088);
     procedure SetExecutionMode(AValue: TExecutionMode);
-    procedure SetFloppyDiskController(AValue: IFloppyDiskController);
+    procedure SetFloppyDiskController(AValue: TFloppyDiskController);
     procedure SetInterrptController(AValue: IInterruptController);
     procedure SetIOBus(AValue: IIOBus);
     procedure SetMemoryBus(AValue: IMemoryBus);
@@ -51,7 +51,7 @@ type
     property Timer: TPit8253 read FTimer write FTimer;
     property InterrptController: IInterruptController read FInterrptController write SetInterrptController;
     property CassetteDrive: TCassetteDrive read FCassetteDrive write SetCassetteDrive;
-    property FloppyDiskController: IFloppyDiskController read FFloppyDiskController write SetFloppyDiskController;
+    property FloppyDiskController: TFloppyDiskController read FFloppyDiskController write SetFloppyDiskController;
     procedure Tick;
     procedure Run(ATicks: Integer=1000);
     procedure Reset;
@@ -75,7 +75,7 @@ begin
   FExecutionMode := AValue;
 end;
 
-procedure TMachine.SetFloppyDiskController(AValue: IFloppyDiskController);
+procedure TMachine.SetFloppyDiskController(AValue: TFloppyDiskController);
 begin
   if FFloppyDiskController = AValue then Exit;
   FFloppyDiskController := AValue;
@@ -236,7 +236,7 @@ begin
     IOBus.AttachDevice(FCassetteDrive);
 
   if Assigned(FloppyDiskController) then
-    MemoryBus.AttachDevice(FloppyDiskController);
+    IOBus.AttachDevice(FloppyDiskController);
 
   for MemoryBlock in FMemory do
     MemoryBus.AttachDevice(MemoryBlock);

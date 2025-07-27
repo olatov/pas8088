@@ -224,8 +224,7 @@ begin
       FreeAndNil(FdcRomStream);
     end;
 
-    Result.FloppyDiskController := TFloppyDiskController.Create(
-      Result, Settings.FloppyDisk.Drives);
+    Result.FloppyDiskController := TFloppyDiskController.Create(Result);
     for I := 0 to High(FFloppyDiskStreams) do
       Result.FloppyDiskController.InsertDisk(I, FFloppyDiskStreams[I]);
   end;
@@ -435,7 +434,9 @@ begin
 
       '.img':
         begin
-          DiskStream := TFileStream.Create(Option, fmOpenReadWrite);
+          //DiskStream := TFileStream.Create(Option, fmOpenReadWrite);
+          DiskStream := TMemoryStream.Create;
+          TMemoryStream(DiskStream).LoadFromFile(Option);
           try
             Insert(DiskStream, FFloppyDiskStreams, Integer.MaxValue);
             FWorkingFileName := Option;
@@ -914,54 +915,18 @@ begin
     ]));
 
   case Computer.Cpu.Registers.AH of
-    $00:
-      { Reset }
-      begin
-        if Computer.FloppyDiskController.Reset then
-        begin
-          Computer.Cpu.Registers.Flags.CF := False;
-          Computer.Cpu.Registers.AH := 0;
-        end else
-        begin
-          Computer.Cpu.Registers.Flags.CF := True;
-          Computer.Cpu.Registers.AH := 1;
-        end;
-
-        Result := True;
-      end;
     $02:
       { Read sectors }
       begin
         if Verbose then
           Write(
             Format(
-              'Drive %s: READ %d sector(s) from ' +
+              'Drive %d: READ %d sector(s) from ' +
               'CHS %d:%d:%d, load to %.4x:%.4x',
             [
-              Chr(Ord('A') + DriveNumber), SectorCount, Cylinder, Head, Sector,
+              DriveNumber, SectorCount, Cylinder, Head, Sector,
               Computer.Cpu.Registers.ES, Computer.Cpu.Registers.BX
             ]));
-
-        if not InRange(DriveNumber, 0, Settings.FloppyDisk.Drives - 1) then
-        begin
-          Computer.Cpu.Registers.Flags.CF := True;
-          Exit;
-        end;
-
-        if Computer.FloppyDiskController.ReadSectors(
-          DriveNumber, Cylinder, Head, Sector, SectorCount,
-          Computer.Cpu.Registers.ES, Computer.Cpu.Registers.BX) then
-        begin
-          Computer.Cpu.Registers.Flags.CF := False;
-          Computer.Cpu.Registers.AH := 0;
-        end else
-        begin
-          Computer.Cpu.Registers.Flags.CF := True;
-          Computer.Cpu.Registers.AL := 0;
-          Computer.Cpu.Registers.AH := 1;
-        end;
-
-        Result := True;
       end;
 
     $03:
@@ -970,33 +935,13 @@ begin
         if Verbose then
           Write(
             Format(
-              'Drive %s: WRITE %d sector(s) to ' +
+              'Drive %d: WRITE %d sector(s) to ' +
               'CHS %d:%d:%d, load from %.4x:%.4x',
             [
-              Chr(Ord('A') + DriveNumber), SectorCount, Cylinder, Head, Sector,
+              DriveNumber, SectorCount, Cylinder, Head, Sector,
               Computer.Cpu.Registers.ES, Computer.Cpu.Registers.BX
             ]));
 
-        if not InRange(DriveNumber, 0, Settings.FloppyDisk.Drives - 1) then
-        begin
-          Computer.Cpu.Registers.Flags.CF := True;
-          Exit;
-        end;
-
-        if Computer.FloppyDiskController.WriteSectors(
-          DriveNumber, Cylinder, Head, Sector, SectorCount,
-          Computer.Cpu.Registers.ES, Computer.Cpu.Registers.BX) then
-        begin
-          Computer.Cpu.Registers.Flags.CF := False;
-          Computer.Cpu.Registers.AH := 0;
-        end else
-        begin
-          Computer.Cpu.Registers.Flags.CF := True;
-          Computer.Cpu.Registers.AL := 0;
-          Computer.Cpu.Registers.AH := 1;
-        end;
-
-        Result := True;
       end;
   else;
   end;

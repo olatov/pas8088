@@ -82,7 +82,7 @@ type
     procedure Tick;
   end;
 
-  IFloppyDiskController = interface(IMemoryBusDevice)
+  IGenericDiskController = interface(IMemoryBusDevice)
     ['{D35A22B1-05C9-44EF-AAD6-589259DA833A}']
     procedure InsertDisk(ADriveNumber: Integer; DiskStream: TStream);
     procedure EjectDisk(ADriveNumber: Integer);
