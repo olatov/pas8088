@@ -1094,28 +1094,24 @@ end;
 procedure TFlagRegister.UpdateAfterRor8(AOld, ACount, AResult: Byte);
 begin
   if ACount = 0 then Exit;
-  CF := (AOld and 1) <> 0;
   if ACount = 1 then OF_ := (AResult and $C0) in [$40, $80];
 end;
 
 procedure TFlagRegister.UpdateAfterRor16(AOld, ACount, AResult: Word);
 begin
   if ACount = 0 then Exit;
-  CF := (AOld and 1) <> 0;
   if ACount = 1 then OF_ := (Hi(AResult) and $C0) in [$40, $80];
 end;
 
 procedure TFlagRegister.UpdateAfterRol8(AOld, ACount, AResult: Byte);
 begin
   if ACount = 0 then Exit;
-  CF := (AResult and 1) <> 0;
   if ACount = 1 then OF_ := (AResult and $C0) in [$40, $80];
 end;
 
 procedure TFlagRegister.UpdateAfterRol16(AOld, ACount, AResult: Word);
 begin
   if ACount = 0 then Exit;
-  CF := (AResult and 1) <> 0;
   if ACount = 1 then OF_ := (Hi(AResult) and $C0) in [$40, $80];
 end;
 
@@ -4131,7 +4127,11 @@ begin
   AOp := ReadRM8(AModRM);
   Result := AOp;
   for I := 1 to Registers.CL do
-    Result := (Result shr 1) or ((Result and 1) shl 7);
+  begin
+    Registers.Flags.CF := Result.Bits[0];
+    Result := Result shr 1;
+    Result.Bits[6] := Registers.Flags.CF;
+  end;
   WriteRM8(AModRM, Result);
   Registers.Flags.UpdateAfterRor8(AOp, 1, Result);
 end;
@@ -4144,9 +4144,13 @@ begin
   AOp := ReadRM16(AModRM);
   Result := AOp;
   for I := 1 to Registers.CL do
-    Result := (Result shr 1) or ((Result and 1) shl 15);
+  begin
+    Registers.Flags.CF := Result.Bits[0];
+    Result := Result shr 1;
+    Result.Bits[15] := Registers.Flags.CF;
+  end;
   WriteRM16(AModRM, Result);
-  Registers.Flags.UpdateAfterRor16(AOp, 1, Result);
+  Registers.Flags.UpdateAfterRor16(AOp, Registers.CL, Result);
 end;
 
 procedure TCpu8088.RolRM8Const1(AModRM: TModRM);
@@ -4156,7 +4160,7 @@ begin
   AOp := ReadRM8(AModRM);
   Result := (AOp shl 1) or (AOp shr 7);
   WriteRM8(AModRM, Result);
-  Registers.Flags.UpdateAfterRol8(AOp, 1, Result);
+  Registers.Flags.UpdateAfterRol8(AOp, Registers.CL, Result);
 end;
 
 procedure TCpu8088.RolRM16Const1(AModRM: TModRM);
@@ -4177,7 +4181,11 @@ begin
   AOp := ReadRM8(AModRM);
   Result := AOp;
   for I := 1 to Registers.CL do
-    Result := (Result shl 1) or (Result shr 7);
+  begin
+    Registers.Flags.CF := Result.Bits[7];
+    Result := Result shl 1;
+    Result.Bits[0] := Registers.Flags.CF;
+  end;
 
   WriteRM8(AModRM, Result);
   Registers.Flags.UpdateAfterRol8(AOp, Registers.CL, Result);
@@ -4191,7 +4199,11 @@ begin
   AOp := ReadRM16(AModRM);
   Result := AOp;
   for I := 1 to Registers.CL do
-    Result := (Result shl 1) or (Result shr 15);
+  begin
+    Registers.Flags.CF := Result.Bits[15];
+    Result := Result shl 1;
+    Result.Bits[0] := Registers.Flags.CF;
+  end;
 
   WriteRM16(AModRM, Result);
   Registers.Flags.UpdateAfterRol16(AOp, Registers.CL, Result);
