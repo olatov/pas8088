@@ -58,6 +58,9 @@ type
 var
   MainForm: TMainForm;
 
+const
+  ApiUrl = 'http://127.0.0.1:3456';
+
 implementation
 
 uses
@@ -293,7 +296,7 @@ end;
 procedure TMainForm.FormCreate(Sender: TObject);
 begin
   Api := TDebuggerApi.Create(Self);
-  Api.Url := 'http://127.0.0.1:3456';
+  Api.Url := ApiUrl;
 end;
 
 procedure TMainForm.BreakOnButtonClick(Sender: TObject);

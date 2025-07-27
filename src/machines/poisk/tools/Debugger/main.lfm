@@ -1,10 +1,10 @@
 object MainForm: TMainForm
   Left = 200
-  Height = 1290
+  Height = 1089
   Top = 100
   Width = 2670
   Caption = 'Debugger'
-  ClientHeight = 1290
+  ClientHeight = 1089
   ClientWidth = 2670
   Color = clSilver
   DesignTimePPI = 216
@@ -238,9 +238,9 @@ object MainForm: TMainForm
     OnClick = RefreshButtonClick
   end
   object CodeMemo: TMemo
-    Left = 1640
+    Left = 1656
     Height = 896
-    Top = 136
+    Top = 168
     Width = 959
     Font.Height = 30
     Font.Name = 'Consolas'
