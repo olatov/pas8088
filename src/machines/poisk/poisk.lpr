@@ -928,6 +928,12 @@ begin
               Computer.Cpu.Registers.ES, Computer.Cpu.Registers.BX
             ]));
 
+        if not InRange(DriveNumber, 0, Settings.FloppyDisk.Drives - 1) then
+        begin
+          Computer.Cpu.Registers.Flags.CF := True;
+          Exit;
+        end;
+
         if Computer.FloppyDiskController.ReadSectors(
           DriveNumber, Cylinder, Head, Sector, SectorCount,
           Computer.Cpu.Registers.ES, Computer.Cpu.Registers.BX) then
@@ -956,6 +962,12 @@ begin
               Chr(Ord('A') + DriveNumber), SectorCount, Cylinder, Head, Sector,
               Computer.Cpu.Registers.ES, Computer.Cpu.Registers.BX
             ]));
+
+        if not InRange(DriveNumber, 0, Settings.FloppyDisk.Drives - 1) then
+        begin
+          Computer.Cpu.Registers.Flags.CF := True;
+          Exit;
+        end;
 
         if Computer.FloppyDiskController.WriteSectors(
           DriveNumber, Cylinder, Head, Sector, SectorCount,
