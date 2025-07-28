@@ -31,7 +31,6 @@ type
     FMemoryBus: IMemoryBus;
     FDiskGeometry: TDiskGeometry;
     FDiskStreams: specialize TArray<TSTream>;
-    FLines: TStringArray;
     function ChsToLogical(Cylinder, Head, Sector: Integer): Integer;
     procedure SetDiskGeometry(AValue: TDiskGeometry);
     procedure Seek(ADriveNumber, ALogicalSector: Integer);
@@ -130,7 +129,6 @@ type
     FMotorRegister: Byte;
     FControlRegister: TControlRegister;
     FDisks: array[0..Drives] of TStream;
-    FLines: TStringArray;
     FTransferBuffer: TTransferBuffer;
     function GetCurrentDisk: TStream;
     procedure SeekSector;
@@ -146,7 +144,6 @@ type
   public
     property TransferBuffer: TTransferBuffer read FTransferBuffer write SetTransferBuffer;
     constructor Create(AOwner: TComponent); override;
-    destructor Destroy; override;
     property CurrentDisk: TStream read GetCurrentDisk;
     procedure InsertDisk(ADrive: Integer; ADisk: TStream);
     procedure EjectDisk(ADrive: Integer);
@@ -206,22 +203,13 @@ function TGenericDiskController.TryReadSectorToBuffer(
   ADriveNumber: Integer): Boolean;
 var
   Disk: TStream;
-  B: Byte;
-  P: Int64;
-  I: Integer;
 begin
   Result := False;
   Disk := FDiskStreams[ADriveNumber];
   if not Assigned(Disk)
     or (Disk.Position > (Disk.Size - DiskGeometry.SectorSize)) then Exit;
 
-  P := Disk.Position;
   Disk.Read(FBuffer[0], DiskGeometry.SectorSize);
-  for I := 0 to High(FBuffer) do
-  begin
-    B := FBuffer[I];
-    Insert(Format('%d | %d | %.2x', [P, I, B]), FLines, Integer.MaxValue);
-  end;
   Result := True;
 end;
 
@@ -491,12 +479,6 @@ constructor TFloppyDiskController.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
   TransferBuffer := TTransferBuffer.Create(Self, Geometry.SectorSize);
-end;
-
-destructor TFloppyDiskController.Destroy;
-begin
-  inherited Destroy;
-  TFile.WriteAllLines('/tmp/b504.txt', FLines);
 end;
 
 procedure TFloppyDiskController.InsertDisk(ADrive: Integer; ADisk: TStream);
