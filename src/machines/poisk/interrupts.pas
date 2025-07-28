@@ -102,7 +102,7 @@ end;
 procedure TPic8259.RaiseIrq(AInput: Byte);
 begin
   if (AInput >= InputCount) or Imr.Bits[AInput] then Exit;
-  Irr := Irr.SetBit(AInput);
+  Irr.SetBit(AInput);
 end;
 
 procedure TPic8259.Tick;
@@ -151,8 +151,8 @@ begin
 
   if Cpu.RaiseHardwareInterrupt(AIrq + VectorBase) then
   begin
-    Isr := Isr.SetBit(AIrq);
-    Irr := Irr.ClearBit(AIrq);
+    Isr.SetBit(AIrq);
+    Irr.ClearBit(AIrq);
   end;
 end;
 
