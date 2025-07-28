@@ -434,9 +434,7 @@ begin
 
       '.img':
         begin
-          //DiskStream := TFileStream.Create(Option, fmOpenReadWrite);
-          DiskStream := TMemoryStream.Create;
-          TMemoryStream(DiskStream).LoadFromFile(Option);
+          DiskStream := TFileStream.Create(Option, fmOpenReadWrite);
           try
             Insert(DiskStream, FFloppyDiskStreams, Integer.MaxValue);
             FWorkingFileName := Option;
@@ -504,7 +502,7 @@ procedure TApplication.RunMachine;
     if IsKeyPressed(KEY_T) then
     begin
       Settings.Machine.Turbo := not Settings.Machine.Turbo;
-      PrintOsd('[Video] Turbo '
+      PrintOsd('[POISK] Turbo '
         + BoolToStr(Settings.Machine.Turbo, 'on', 'off'));
     end;
 
