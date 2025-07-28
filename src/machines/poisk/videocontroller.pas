@@ -362,7 +362,7 @@ begin
     { NMI trap }
 
     Offset := AAddress - $B8000;
-    if Offset < $4000 then ActivateTrap(Offset, AData);
+    if Offset < $4000 then ActivateTrap(Offset);
   end;
 end;
 
