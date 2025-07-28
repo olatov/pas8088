@@ -5,7 +5,7 @@ unit FloppyDiskController;
 interface
 
 uses
-  Classes, SysUtils, Math,
+  Classes, SysUtils, Math, System.IOUtils,
   Hardware, Cpu8088;
 
 type
@@ -32,6 +32,7 @@ type
     FMemoryBus: IMemoryBus;
     FDiskGeometry: TDiskGeometry;
     FDiskStreams: specialize TArray<TSTream>;
+    FLines: TStringArray;
     function ChsToLogical(Cylinder, Head, Sector: Integer): Integer;
     procedure SetDiskGeometry(AValue: TDiskGeometry);
     procedure Seek(ADriveNumber, ALogicalSector: Integer);
@@ -42,6 +43,7 @@ type
     procedure EnsureDriveNumberIsValid(ADriveNumber: Integer);
     function VerifyChs(ACylinder, AHead, ASector: Integer): Boolean;
   public
+    destructor Destroy; override;
     property DiskGeometry: TDiskGeometry read FDiskGeometry write SetDiskGeometry;
     constructor Create(AOwner: TComponent; DriveCount: Integer = 2); reintroduce;
 
@@ -113,13 +115,22 @@ function TFloppyDiskController.TryReadSectorToBuffer(
   ADriveNumber: Integer): Boolean;
 var
   Disk: TStream;
+  B: Byte;
+  P: Int64;
+  I: Integer;
 begin
   Result := False;
   Disk := FDiskStreams[ADriveNumber];
   if not Assigned(Disk)
     or (Disk.Position > (Disk.Size - DiskGeometry.SectorSize)) then Exit;
 
+  P := Disk.Position;
   Disk.Read(FBuffer[0], DiskGeometry.SectorSize);
+  for I := 0 to High(FBuffer) do
+  begin
+    B := FBuffer[I];
+    Insert(Format('%d | %d | %.2x', [P, I, B]), FLines, Integer.MaxValue);
+  end;
   Result := True;
 end;
 
@@ -157,6 +168,12 @@ begin
       ChsToLogical(ACylinder, AHead, ASector),
       0,
       (DiskGeometry.Cylinders * DiskGeometry.Heads * DiskGeometry.Sectors) - 1);
+end;
+
+destructor TFloppyDiskController.Destroy;
+begin
+  inherited Destroy;
+  TFile.WriteAllLines('/tmp/fake.txt', FLines);
 end;
 
 constructor TFloppyDiskController.Create(
