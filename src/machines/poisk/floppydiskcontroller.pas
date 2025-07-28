@@ -31,6 +31,7 @@ type
     FMemoryBus: IMemoryBus;
     FDiskGeometry: TDiskGeometry;
     FDiskStreams: specialize TArray<TSTream>;
+    FLines: TStringArray;
     function ChsToLogical(Cylinder, Head, Sector: Integer): Integer;
     procedure SetDiskGeometry(AValue: TDiskGeometry);
     procedure Seek(ADriveNumber, ALogicalSector: Integer);
@@ -205,13 +206,22 @@ function TGenericDiskController.TryReadSectorToBuffer(
   ADriveNumber: Integer): Boolean;
 var
   Disk: TStream;
+  B: Byte;
+  P: Int64;
+  I: Integer;
 begin
   Result := False;
   Disk := FDiskStreams[ADriveNumber];
   if not Assigned(Disk)
     or (Disk.Position > (Disk.Size - DiskGeometry.SectorSize)) then Exit;
 
+  P := Disk.Position;
   Disk.Read(FBuffer[0], DiskGeometry.SectorSize);
+  for I := 0 to High(FBuffer) do
+  begin
+    B := FBuffer[I];
+    Insert(Format('%d | %d | %.2x', [P, I, B]), FLines, Integer.MaxValue);
+  end;
   Result := True;
 end;
 
