@@ -5,7 +5,7 @@ unit FloppyDiskController;
 interface
 
 uses
-  Classes, SysUtils, Math,
+  Classes, SysUtils, Math, System.IOUtils,
   Hardware, Cpu8088;
 
 type
@@ -114,6 +114,7 @@ type
     FMotorRegister: Byte;
     FControlRegister: TControlRegister;
     FDisks: array[0..Drives] of TStream;
+    FLines: TStringArray;
     FBuffer: record
       Data: array of Byte;
       Index: Integer;
@@ -128,6 +129,7 @@ type
     procedure WriteByte;
   public
     constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
     property CurrentDisk: TStream read GetCurrentDisk;
     procedure InsertDisk(ADrive: Integer; ADisk: TStream);
     procedure EjectDisk(ADrive: Integer);
@@ -451,6 +453,12 @@ begin
   SetLength(FBuffer.Data, Geometry.SectorSize);
 end;
 
+destructor TFloppyDiskController.Destroy;
+begin
+  inherited Destroy;
+  TFile.WriteAllLines('/tmp/b504.txt', FLines);
+end;
+
 procedure TFloppyDiskController.InsertDisk(ADrive: Integer; ADisk: TStream);
 begin
   FDisks[ADrive] := ADisk;
@@ -515,8 +523,12 @@ begin
         case CurrentCommand of
           cmdRead:
             begin
-              ReadByte;
-              AData := FDataRegister;
+              if FBuffer.Index <= High(FBuffer.Data) then
+              begin
+                ReadByte;
+                AData := FDataRegister;
+                Insert(IntToHex(AData, 2), FLines, Integer.MaxValue);
+              end;
             end;
         end;
         Result := True;
@@ -526,7 +538,7 @@ begin
       begin
         case CurrentCommand of
           cmdRead, cmdWrite:
-            AData := IfThen(FBuffer.Index < Geometry.SectorSize, 1, 0);
+            AData := IfThen(FBuffer.Index <= High(FBuffer.Data), 1, 0);
         end;
         Result := True;
       end;
