@@ -88,6 +88,21 @@ type
         Unused: 0..1;
       end;
 
+      { TTransferBuffer }
+
+      TTransferBuffer = class(TComponent)
+      private
+        function GetEof: Boolean;
+      public
+        Data: TBytes;
+        Index: Integer;
+        constructor Create(AOwner: TComponent; ACapacity: Integer); reintroduce;
+        property Eof: Boolean read GetEof;
+        procedure Reset;
+        procedure Push(AValue: Byte);
+        function Pop: Byte;
+      end;
+
     const
       ControlStatIOPort = $C0;
       CylinderIOPort = $C1;
@@ -115,19 +130,20 @@ type
     FControlRegister: TControlRegister;
     FDisks: array[0..Drives] of TStream;
     FLines: TStringArray;
-    FBuffer: record
-      Data: array of Byte;
-      Index: Integer;
-    end;
+    FTransferBuffer: TTransferBuffer;
     function GetCurrentDisk: TStream;
     procedure SeekSector;
+    procedure SetTransferBuffer(AValue: TTransferBuffer);
     procedure Step;
     property CurrentCommand: TCommand read FCurrentCommand write SetCurrentCommand;
     procedure WriteControlStat(AData: Byte);
     function ReadControlStat: Byte;
+    procedure ReadSector;
+    procedure WriteSector;
     procedure ReadByte;
     procedure WriteByte;
   public
+    property TransferBuffer: TTransferBuffer read FTransferBuffer write SetTransferBuffer;
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
     property CurrentDisk: TStream read GetCurrentDisk;
@@ -379,9 +395,16 @@ begin
   CurrentDisk.Seek(Geometry.SectorSize * LogicalSector, soBeginning);
 end;
 
+procedure TFloppyDiskController.SetTransferBuffer(AValue: TTransferBuffer);
+begin
+  if FTransferBuffer = AValue then Exit;
+  FTransferBuffer := AValue;
+end;
+
 procedure TFloppyDiskController.Step;
 begin
-
+  Inc(FCylinderRegister);
+  SeekSector;
 end;
 
 procedure TFloppyDiskController.WriteControlStat(AData: Byte);
@@ -391,13 +414,21 @@ begin
   case CurrentCommand of
     cmdSeek: begin end;
 
-    cmdRead, cmdWrite:
+    cmdRead:
       begin
         SeekSector;
-        FBuffer.Index := 0;
+        TransferBuffer.Reset;
+        ReadSector;
       end;
 
-    cmdStep: Step;
+    cmdWrite:
+      begin
+        SeekSector;
+        TransferBuffer.Reset;
+      end;
+
+    cmdStep:
+      Step;
   end;
 end;
 
@@ -421,36 +452,35 @@ begin
   end;
 end;
 
+procedure TFloppyDiskController.ReadSector;
+begin
+  if not Assigned(CurrentDisk) then Exit;
+  CurrentDisk.Read(TransferBuffer.Data[0], Length(TransferBuffer.Data));
+end;
+
+procedure TFloppyDiskController.WriteSector;
+begin
+  if not Assigned(CurrentDisk) then Exit;
+  CurrentDisk.Write(TransferBuffer.Data[0], Length(TransferBuffer.Data));
+end;
+
 procedure TFloppyDiskController.ReadByte;
 begin
-  if not Assigned(CurrentDisk)
-      or (FBuffer.Index >= Geometry.SectorSize)
-      or (CurrentDisk.Position >= CurrentDisk.Size) then Exit;
-
-  if FBuffer.Index = 0 then
-    CurrentDisk.Read(FBuffer.Data[0], Length(FBuffer.Data));
-
-  FDataRegister := FBuffer.Data[FBuffer.Index];
-  Inc(FBuffer.Index);
+  if not Assigned(CurrentDisk) or (TransferBuffer.Eof) then Exit;
+  FDataRegister := TransferBuffer.Pop;
 end;
 
 procedure TFloppyDiskController.WriteByte;
 begin
-  if not Assigned(CurrentDisk)
-      or (FBuffer.Index >= Geometry.SectorSize)
-      or (CurrentDisk.Position >= CurrentDisk.Size) then Exit;
-
-  FBuffer.Data[FBuffer.Index] := FDataRegister;
-  Inc(FBuffer.Index);
-
-  if FBuffer.Index >= Length(FBuffer.Data) then
-    CurrentDisk.Write(FBuffer.Data[0], Length(FBuffer.Data));
+  if TransferBuffer.Eof then Exit;
+  TransferBuffer.Push(FDataRegister);
+  if TransferBuffer.Eof then WriteSector;
 end;
 
 constructor TFloppyDiskController.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
-  SetLength(FBuffer.Data, Geometry.SectorSize);
+  TransferBuffer := TTransferBuffer.Create(Self, Geometry.SectorSize);
 end;
 
 destructor TFloppyDiskController.Destroy;
@@ -498,6 +528,8 @@ end;
 
 function TFloppyDiskController.OnIORead(
   ADevice: IIOBusDevice; AAddress: Word; out AData: Byte): Boolean;
+var
+  I: Integer;
 begin
   case AAddress of
     ControlStatIOPort:
@@ -523,12 +555,8 @@ begin
         case CurrentCommand of
           cmdRead:
             begin
-              if FBuffer.Index <= High(FBuffer.Data) then
-              begin
-                ReadByte;
-                AData := FDataRegister;
-                Insert(IntToHex(AData, 2), FLines, Integer.MaxValue);
-              end;
+              if not TransferBuffer.Eof then ReadByte;
+              AData := FDataRegister;
             end;
         end;
         Result := True;
@@ -538,7 +566,10 @@ begin
       begin
         case CurrentCommand of
           cmdRead, cmdWrite:
-            AData := IfThen(FBuffer.Index <= High(FBuffer.Data), 1, 0);
+            begin
+              AData := 0;
+              AData.Bits[0] := not TransferBuffer.Eof;
+            end;
         end;
         Result := True;
       end;
@@ -579,6 +610,39 @@ begin
         if FControlRegister.FdcReset = 1 then Reset;
       end;
   end;
+end;
+
+{ TFloppyDiskController.TTransferBuffer }
+
+function TFloppyDiskController.TTransferBuffer.GetEof: Boolean;
+begin
+  Result := Index > High(Data);
+end;
+
+constructor TFloppyDiskController.TTransferBuffer.Create(
+  AOwner: TComponent; ACapacity: Integer);
+begin
+  inherited Create(AOwner);
+  SetLength(Data, ACapacity);
+end;
+
+procedure TFloppyDiskController.TTransferBuffer.Reset;
+begin
+  Index := 0;
+end;
+
+procedure TFloppyDiskController.TTransferBuffer.Push(AValue: Byte);
+begin
+  if Eof then Exit;
+  Data[Index] := AValue;
+  Inc(Index);
+end;
+
+function TFloppyDiskController.TTransferBuffer.Pop: Byte;
+begin
+  if Eof then Exit(0);
+  Result := Data[Index];
+  Inc(Index);
 end;
 
 { TFloppyDiskController }
