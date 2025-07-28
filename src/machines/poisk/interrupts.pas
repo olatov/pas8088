@@ -37,6 +37,7 @@ type
     procedure SetImr(AValue: Byte);
     procedure RaiseInterrupt(AIrq: Byte);
     procedure EndOfInterrupt;
+    procedure EndOfInterrupt(AIrq: Byte);
   private
     FCpu: ICpu;
     FVectorBase: Byte;
@@ -161,6 +162,11 @@ begin
   Isr := 0;
 end;
 
+procedure TPic8259.EndOfInterrupt(AIrq: Byte);
+begin
+  Isr.ClearBit(AIrq);
+end;
+
 procedure TPic8259.SetCpu(AValue: ICpu);
 begin
   if FCpu = AValue then Exit;
@@ -235,7 +241,11 @@ begin
 
           cmdInitialize:
             FInitilizationWordIndex := 0;
-        else;
+        else
+          case AData of
+            $60..$67: EndOfInterrupt(AData - $60);
+          else
+          end;
         end;
       end;
 
