@@ -1122,8 +1122,10 @@ end;
 
 procedure TFlagRegister.UpdateAfterImul8(AResult: Int16);
 begin
-  CF := InRange(AResult, Int8.MinValue, Int8.MaxValue);
+  CF := Hi(AResult) <> 0;
   OF_ := CF;
+  UpdateSF16(AResult);
+  UpdateZF16(AResult);
 end;
 
 procedure TFlagRegister.UpdateAfterImul16(AResult: Int32);
