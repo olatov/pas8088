@@ -3478,14 +3478,19 @@ end;
 
 procedure TCpu8088.HandleAad;
 var
-  Result: Byte;
+  Result: Int16;
 begin
-  Result := ((Registers.AL * 10) + Registers.AX) and $FF;
-  Registers.AL := Result;
+  Result := (Registers.AH * FetchCodeByte) + Registers.AL;
+  Registers.AL := Lo(Result);
   Registers.AH := 0;
-  Registers.Flags.UpdateSF8(Result);
-  Registers.Flags.UpdatePF8(Result);
-  Registers.Flags.UpdateZF8(Result);
+  Registers.Flags.UpdateSF8(Registers.AL);
+  Registers.Flags.UpdatePF8(Registers.AL);
+  Registers.Flags.UpdateZF8(Registers.AL);
+
+  { Todo: undefined but need to figure out real 8088 behavior }
+  Registers.Flags.CF := False;
+  Registers.Flags.OF_ := not InRange(Result, Int8.MinValue, Int8.MaxValue);
+  Registers.Flags.AF := True;
 end;
 
 procedure TCpu8088.HandleXlat;
