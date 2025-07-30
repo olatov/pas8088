@@ -3194,7 +3194,7 @@ end;
 
 procedure TCpu8088.HandleStosw;
 begin
-  WriteMemoryWord(ExtraSegment, Registers.DI, Registers.AX);
+  WriteMemoryWord(Registers.ES, Registers.DI, Registers.AX);
   Registers.DI := Registers.DI + DFDelta(SizeOf(Registers.AX));
 end;
 
