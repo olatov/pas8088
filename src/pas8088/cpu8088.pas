@@ -2414,33 +2414,31 @@ end;
 
 procedure TCpu8088.HandleDaa;
 var
-  OriginalAL, Adjustment: Byte;
+  Adjustment: Byte = 0;
+  OriginalAL: Byte;
+  OriginalAF: Boolean;
 begin
   OriginalAL := Registers.AL;
-  Adjustment := 0;
+  OriginalAF := Registers.Flags.AF;
 
-  if ((Registers.AL and $0F) > 9) or Registers.Flags.AF then
+  if ((OriginalAL and $0F) > 9) or Registers.Flags.AF then
   begin
-    Adjustment := $06;
+    Adjustment := 6;
     Registers.Flags.AF := True;
-  end
-  else
-    Registers.Flags.AF := False;
+  end;
 
-  if (OriginalAL > $99) or Registers.Flags.CF then
+  if (OriginalAL > IfThen(OriginalAF, $9F, $99)) or Registers.Flags.CF then
   begin
     Inc(Adjustment, $60);
     Registers.Flags.CF := True;
-  end
-  else
-    Registers.Flags.CF := False;
+  end;
 
   Registers.AL := OriginalAL + Adjustment;
-  if Registers.AL < OriginalAL then Registers.Flags.CF := True;
 
   Registers.Flags.UpdateSF8(Registers.AL);
-  Registers.Flags.UpdateSF8(Registers.AL);
-  Registers.Flags.UpdateSF8(Registers.AL);
+  Registers.Flags.UpdatePF8(Registers.AL);
+  Registers.Flags.UpdateZF8(Registers.AL);
+  Registers.Flags.UpdateOFAdd8(OriginalAL, Adjustment, 0, Registers.AL);
 end;
 
 procedure TCpu8088.HandleSubALImm8;
