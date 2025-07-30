@@ -3188,7 +3188,7 @@ end;
 
 procedure TCpu8088.HandleStosb;
 begin
-  WriteMemoryByte(ExtraSegment, Registers.DI, Registers.AL);
+  WriteMemoryByte(Registers.ES, Registers.DI, Registers.AL);
   Registers.DI := Registers.DI + DFDelta(SizeOf(Registers.AL));
 end;
 
