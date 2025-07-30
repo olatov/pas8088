@@ -4298,46 +4298,40 @@ end;
 
 procedure TCpu8088.RclRM8CL(AModRM: TModRM);
 var
-  AOp, OldCF, Result: Byte;
+  Result: Byte;
+  OldCF: Boolean;
   I: Integer;
-const
-  CFMask: array[False..True] of Byte = (0, $80);
 begin
-  AOp := ReadRM8(AModRM);
-  Result := AOp;
+  Result := ReadRM8(AModRM);
   for I := 1 to Registers.CL do
   begin
-    OldCF := IfThen(Registers.Flags.CF, 1, 0);
-    Registers.Flags.CF := (Result and $80) <> 0;
-    Result := (Result shl 1) or OldCF;
+    OldCF := Registers.Flags.CF;
+    Registers.Flags.CF := Result.Bits[7];
+    Result := Result shl 1;
+    Result.Bits[0] := OldCF;
   end;
   WriteRM8(AModRM, Result);
 
-  if Registers.CL = 1 then
-    Registers.Flags.OF_ :=
-      ((Result xor CFMask[Registers.Flags.CF]) and $80) <> 0;
+  Registers.Flags.OF_ := Registers.Flags.CF xor Result.Bits[7];
 end;
 
 procedure TCpu8088.RclRM16CL(AModRM: TModRM);
 var
-  AOp, OldCF, Result: Word;
+  Result: Word;
+  OldCF: Boolean;
   I: Integer;
-const
-  CFMask: array[False..True] of Word = (0, $8000);
 begin
-  AOp := ReadRM16(AModRM);
-  Result := AOp;
+  Result := ReadRM16(AModRM);
   for I := 1 to Registers.CL do
   begin
-    OldCF := IfThen(Registers.Flags.CF, 1, 0);
-    Registers.Flags.CF := (Result and $8000) <> 0;
-    Result := (Result shl 1) or OldCF;
+    OldCF := Registers.Flags.CF;
+    Registers.Flags.CF := Result.Bits[15];
+    Result := Result shl 1;
+    Result.Bits[0] := OldCF;
   end;
   WriteRM16(AModRM, Result);
 
-  if Registers.CL = 1 then
-    Registers.Flags.OF_ :=
-      ((Result xor CFMask[Registers.Flags.CF]) and $8000) <> 0;
+  Registers.Flags.OF_ := Registers.Flags.CF xor Result.Bits[15];
 end;
 
 procedure TCpu8088.RcrRM8Const1(AModRM: TModRM);
