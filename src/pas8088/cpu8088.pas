@@ -3674,6 +3674,13 @@ end;
 
 procedure TCpu8088.PushReg16(ARegIndex: TRegisters.TRegIndex16);
 begin
+  if ARegIndex = riSP then
+  begin
+    { 8086/88 specific }
+    Push(Registers.SP - 2);
+    Exit;
+  end;
+
   Push(Registers.GetByIndex16(ARegIndex));
 end;
 
