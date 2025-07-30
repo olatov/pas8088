@@ -3084,7 +3084,7 @@ var
   ModRM: TModRM;
 begin
   ModRM := FetchModRM;
-  Registers.SetByIndex16(Ord(riES) + ModRM.Reg, ReadRM16(ModRM));
+  Registers.SetByIndex16(Ord(riES) + (ModRM.Reg and $03), ReadRM16(ModRM));
 end;
 
 procedure TCpu8088.HandlePopRM16;
