@@ -115,6 +115,7 @@ begin
           begin
             TextColor(4);
             Writeln('ERROR');
+            TextColor(14);
             for TestError in Errors do
               Writeln('| --> ', TestError);
             TextColor(7);
