@@ -3068,7 +3068,7 @@ var
   ModRM: TModRM;
 begin
   ModRM := FetchModRM;
-  WriteRM16(ModRM, Registers.GetByIndex16(Ord(riES) + ModRM.Reg));
+  WriteRM16(ModRM, Registers.GetByIndex16(Ord(riES) + (ModRM.Reg and $03)));
 end;
 
 procedure TCpu8088.HandleLea;
