@@ -1033,7 +1033,7 @@ begin
 
   if ACount = 1 then OF_ := ((AResult and $80) xor CFMask[CF]) <> 0;
 
-  AF := False; { for debug }
+  UpdateAFAdd8(AOld, AResult - AOld, 0, AResult);
 end;
 
 procedure TFlagRegister.UpdateAfterShl16(
@@ -1052,7 +1052,7 @@ begin
 
   if ACount = 1 then OF_ := ((AResult and $8000) xor CFMask[CF]) <> 0;
 
-  AF := False; { for debug }
+  UpdateAFAdd16(AOld, AResult - AOld, 0, AResult);
 end;
 
 procedure TFlagRegister.UpdateAfterShr8(
