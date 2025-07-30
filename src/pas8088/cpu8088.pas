@@ -1109,7 +1109,7 @@ procedure TFlagRegister.UpdateAfterRol8(AOld, ACount: Word;
 begin
   if ACount = 0 then Exit;
   CF := ALastShifted;
-  if ACount = 1 then OF_ := CF xor AResult.Bits[7];
+  OF_ := CF xor AResult.Bits[7];
 end;
 
 procedure TFlagRegister.UpdateAfterRol16(AOld, ACount: Word;
@@ -1117,7 +1117,7 @@ procedure TFlagRegister.UpdateAfterRol16(AOld, ACount: Word;
 begin
   if ACount = 0 then Exit;
   CF := ALastShifted;
-  if ACount = 1 then OF_ := CF xor AResult.Bits[15];
+  OF_ := CF xor AResult.Bits[15];
 end;
 
 procedure TFlagRegister.UpdateAfterMul8(AResult: Word);
