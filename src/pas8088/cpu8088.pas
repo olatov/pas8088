@@ -3633,6 +3633,7 @@ end;
 procedure TCpu8088.HandleGRP5;
 var
   ModRM: TModRM;
+  Value: Word;
 begin
   ModRM := FetchModRM;
 
@@ -3647,7 +3648,13 @@ begin
     5: JumpFar(
          ReadMemoryWord(ModRM.Segment, ModRM.EffectiveAddr + 2),
          ReadMemoryWord(ModRM.Segment, ModRM.EffectiveAddr));
-    6: Push(ReadRM16(ModRM));
+    6:
+      begin
+        Value := ReadRM16(ModRM);
+        if (ModRM.Mod_ = modRegister) and (TRegisters.TRegIndex16(ModRM.Rm) = riSP) then
+          Dec(Value, 2);
+        Push(Value);
+      end;
     7: Exception.CreateFmt('Invalid GRP5 extension: %d', [ModRM.Reg]);
   end;
 end;
