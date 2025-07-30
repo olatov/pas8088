@@ -2595,13 +2595,27 @@ begin
 end;
 
 procedure TCpu8088.HandleAaa;
+var
+  OldAL: Byte;
 begin
+  OldAL := Registers.AL;
+
   Registers.Flags.AF := Registers.Flags.AF or ((Registers.AL and $0F) > 9);
   if Registers.Flags.AF then
-    Registers.AX := Registers.AX + $106;
+  begin
+    Registers.AL := Registers.AL + 6;
+    Registers.AH := Registers.AH + 1;
+    Registers.Flags.AF := True;
+    Registers.Flags.CF := True;
+  end;
+
+  Registers.Flags.CF := Registers.Flags.AF;
+  Registers.Flags.UpdatePF8(Registers.AL);
+  Registers.Flags.UpdateSF8(Registers.AL);
+  Registers.Flags.UpdateZF8(Registers.AL);
+  Registers.Flags.UpdateOFAdd8(OldAL, Registers.AL - OldAL, 0, Registers.AL);
 
   Registers.AL := Registers.AL and $0F;
-  Registers.Flags.CF := Registers.Flags.AF;
 end;
 
 procedure TCpu8088.HandleCmpRM8Reg8;
