@@ -4570,7 +4570,8 @@ begin
     Exit;
   end;
 
-  DivMod(Int16(Registers.AX), Divisor, Result, Remainder);
+  Result := Int16(Registers.AX) div Divisor;
+  Remainder := Int16(Registers.AX) mod Divisor;
   if not InRange(Result, Int8.MinValue, Int8.MaxValue) then
   begin
     RaiseHardwareInterrupt(0);
