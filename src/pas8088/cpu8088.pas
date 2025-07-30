@@ -2416,22 +2416,16 @@ procedure TCpu8088.HandleDaa;
 var
   Adjustment: Byte = 0;
   OriginalAL: Byte;
-  OriginalAF: Boolean;
 begin
   OriginalAL := Registers.AL;
-  OriginalAF := Registers.Flags.AF;
 
-  if ((OriginalAL and $0F) > 9) or Registers.Flags.AF then
-  begin
-    Adjustment := 6;
-    Registers.Flags.AF := True;
-  end;
+  Registers.Flags.CF := Registers.Flags.CF
+    or (Registers.AL > IfThen(Registers.Flags.AF, $9F, $99));
 
-  if (OriginalAL > IfThen(OriginalAF, $9F, $99)) or Registers.Flags.CF then
-  begin
-    Inc(Adjustment, $60);
-    Registers.Flags.CF := True;
-  end;
+  Registers.Flags.AF := Registers.Flags.AF or ((Registers.AL and $0F) > 9);
+
+  if Registers.Flags.CF then Adjustment := 6;
+  if Registers.Flags.AF then Inc(Adjustment, $60);
 
   Registers.AL := OriginalAL + Adjustment;
 
