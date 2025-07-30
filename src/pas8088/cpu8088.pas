@@ -1085,7 +1085,7 @@ begin
   UpdateSF8(AResult);
   UpdateZF8(AResult);
   UpdatePF8(AResult);
-  AF := False; { for debug }
+  AF := False;
 end;
 
 procedure TFlagRegister.UpdateAfterRor8(AOld, ACount: Byte;
@@ -1161,6 +1161,7 @@ begin
   UpdateSF16(AResult);
   UpdateZF16(AResult);
   UpdatePF16(AResult);
+  AF := False;
 end;
 
 procedure TFlagRegister.UpdateAfterSub16(AOld, AChange, ACarryIn: Word; AResult: Int32);
@@ -4101,32 +4102,32 @@ end;
 
 procedure TCpu8088.SarRM8Const1(AModRM: TModRM);
 var
-  OrigSign: Byte;
-  LastShiftedOut, Value: Byte;
+  OrigSign, Value: Byte;
+  LastShiftedOut: Boolean;
 begin
   Value := ReadRM8(AModRM);
   OrigSign := Value and $80;
 
-  LastShiftedOut := Value and 1;
+  LastShiftedOut := Value.Bits[0];
   Value := (Value shr 1) or OrigSign;
 
   WriteRM8(AModRM, Value);
-  Registers.Flags.UpdateAfterSar8(Value, LastShiftedOut <> 0);
+  Registers.Flags.UpdateAfterSar8(Value, LastShiftedOut);
 end;
 
 procedure TCpu8088.SarRM16Const1(AModRM: TModRM);
 var
-  OrigSign: Word;
-  LastShiftedOut, Value: Word;
+  OrigSign, Value: Word;
+  LastShiftedOut: Boolean;
 begin
   Value := ReadRM16(AModRM);
   OrigSign := Value and $8000;
 
-  LastShiftedOut := Value and 1;
+  LastShiftedOut := Value.Bits[0];
   Value := (Value shr 1) or OrigSign;
 
   WriteRM16(AModRM, Value);
-  Registers.Flags.UpdateAfterSar16(Value, LastShiftedOut <> 0);
+  Registers.Flags.UpdateAfterSar16(Value, LastShiftedOut);
 end;
 
 procedure TCpu8088.RorRM8Const1(AModRM: TModRM);
