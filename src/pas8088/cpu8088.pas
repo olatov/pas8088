@@ -2468,22 +2468,24 @@ end;
 procedure TCpu8088.HandleDas;
 var
   OldAL: Byte;
-  OldCF: Boolean;
+  Adjustment: Byte = 0;
 begin
   OldAL := Registers.AL;
-  OldCF := Registers.Flags.CF;
 
-  Registers.Flags.AF := (((Registers.AL and $0F) > 9) or Registers.Flags.AF);
-  if Registers.Flags.AF then
-    Registers.AL := Registers.AL - 6;
+  Registers.Flags.CF := Registers.Flags.CF or
+    (Registers.AL > IfThen(Registers.Flags.AF, $9F, $99));
 
-  Registers.Flags.CF := (OldAL > $99) or OldCF;
-  if Registers.Flags.CF then
-    Registers.AL := Registers.AL - $60;
+  Registers.Flags.AF := Registers.Flags.AF or ((Registers.AL and $0F) > 9);
 
+  if Registers.Flags.AF then Adjustment := 6;
+  if Registers.Flags.CF then Inc(Adjustment, $60);
+
+  Registers.AL := Registers.AL - Adjustment;
+
+  Registers.Flags.UpdatePF8(Registers.AL);
   Registers.Flags.UpdateSF8(Registers.AL);
-  Registers.Flags.UpdateSF8(Registers.AL);
-  Registers.Flags.UpdateSF8(Registers.AL);
+  Registers.Flags.UpdateZF8(Registers.AL);
+  Registers.Flags.UpdateOFSub8(OldAL, Adjustment, 0, Registers.AL);
 end;
 
 procedure TCpu8088.HandleSubRM8Reg8;
