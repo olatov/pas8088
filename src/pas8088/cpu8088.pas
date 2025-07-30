@@ -4355,7 +4355,7 @@ begin
   WriteRM8(AModRM, Result);
 
   Registers.Flags.CF := (AOp and 1) <> 0;
-  Registers.Flags.OF_ := ((AOp xor CFMask[Registers.Flags.CF]) and $8000) = 0;
+  Registers.Flags.OF_ := Result.Bits[7] xor Result.Bits[6];
 end;
 
 procedure TCpu8088.RcrRM16Const1(AModRM: TModRM);
@@ -4370,7 +4370,7 @@ begin
   WriteRM16(AModRM, Result);
 
   Registers.Flags.CF := (AOp and 1) <> 0;
-  Registers.Flags.OF_ := ((AOp xor CFMask[Registers.Flags.CF]) and $8000) = 0;
+  Registers.Flags.OF_ := Result.Bits[15] xor Result.Bits[14];
 end;
 
 procedure TCpu8088.RcrRM8CL(AModRM: TModRM);
