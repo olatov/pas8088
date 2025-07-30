@@ -2401,8 +2401,8 @@ begin
 
   Registers.Flags.AF := Registers.Flags.AF or ((Registers.AL and $0F) > 9);
 
-  if Registers.Flags.CF then Adjustment := 6;
-  if Registers.Flags.AF then Inc(Adjustment, $60);
+  if Registers.Flags.AF then Adjustment := 6;
+  if Registers.Flags.CF then Inc(Adjustment, $60);
 
   Registers.AL := OriginalAL + Adjustment;
 
