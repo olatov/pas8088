@@ -736,9 +736,9 @@ var
   I: Integer;
   MaskedValue: Word;
 begin
-  MaskedValue := AValue or $02;
+  MaskedValue := (AValue and $FFD7) or $0002;
   for I := 0 to 15 do
-    if (MaskedValue and (1 shl I)) <> 0 then
+    if MaskedValue.Bits[I] then
       FBits.SetOn(I)
     else
       FBits.Clear(I);
