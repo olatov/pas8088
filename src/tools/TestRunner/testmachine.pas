@@ -318,7 +318,11 @@ var
   Errors: TStringArray;
 begin
   LoadTest(ATest);
-  Cpu.Tick;
+
+  repeat
+    Cpu.Tick;
+  until not CPU.CurrentInstruction.Repeating;
+
   Result := VerifyTest(ATest, Errors);
   AErrors := Errors;
 end;
