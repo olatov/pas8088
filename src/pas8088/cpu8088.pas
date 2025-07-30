@@ -2661,7 +2661,11 @@ begin
 end;
 
 procedure TCpu8088.HandleAas;
+var
+  OldAL: Byte;
 begin
+  OldAL := Registers.AL;
+
   Registers.Flags.AF := Registers.Flags.AF or ((Registers.AL and $0F) > 9);
   if Registers.Flags.AF then
   begin
@@ -2669,8 +2673,13 @@ begin
     Registers.AH := Registers.AH - 1;
   end;
 
-  Registers.AL := Registers.AL and $0F;
   Registers.Flags.CF := Registers.Flags.AF;
+  Registers.Flags.UpdatePF8(Registers.AL);
+  Registers.Flags.UpdateZF8(Registers.AL);
+  Registers.Flags.UpdateSF8(Registers.AL);
+  Registers.Flags.UpdateOFAdd8(OldAL, Registers.AL - OldAL, 0, Registers.AL);
+
+  Registers.AL := Registers.AL and $0F;
 end;
 
 procedure TCpu8088.HandleNop;
