@@ -475,7 +475,7 @@ begin
   Assert(State in [csWaitingLoByte, csCounting]);
   Assert(AccessMode in [amLoByte, amLoByteHiByte]);
 
-  NewReloadValue := Hi(NewReloadValue) or AValue;
+  NewReloadValue := (Hi(NewReloadValue) shl 8) or AValue;
   State := specialize IfThen<TState>(
     AccessMode = amLoByteHiByte,
     csWaitingHiByte, csValueSet)
