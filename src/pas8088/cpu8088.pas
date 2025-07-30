@@ -1058,15 +1058,12 @@ end;
 procedure TFlagRegister.UpdateAfterShr8(
   AOld: Byte; ACount: Byte; AResult: Byte);
 begin
-  OF_ := False;  { debug }
   UpdateZF8(AResult);
   UpdateSF8(AResult);
   UpdatePF8(AResult);
-  CF := ((AOld shr (ACount - 1)) and 1) <> 0;
-
-  if ACount = 1 then OF_ := (AResult and $80) <> 0;
-
-  AF := False; { for debug }
+  if ACount = 1 then OF_ := AResult.Bits[7] xor AResult.Bits[6];
+  CF := AOld.Bits[ACount - 1];
+  AF := False;
 end;
 
 procedure TFlagRegister.UpdateAfterShr16(
@@ -1076,10 +1073,9 @@ begin
   UpdateZF16(AResult);
   UpdateSF16(AResult);
   UpdatePF16(AResult);
-  CF := ((AOld shr (ACount - 1)) and 1) <> 0;
-  if ACount = 1 then OF_ := (AResult and $8000) <> 0;
-
-  AF := False; { for debug }
+  if ACount = 1 then OF_ := AResult.Bits[15] xor AResult.Bits[14];
+  CF := AOld.Bits[ACount - 1];
+  AF := False;
 end;
 
 procedure TFlagRegister.UpdateAfterSar8(AResult: Byte; ALastShiftedOut: Boolean);
