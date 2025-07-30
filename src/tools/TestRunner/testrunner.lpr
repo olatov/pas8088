@@ -6,7 +6,7 @@ uses
   {$IFDEF UNIX}
   cthreads,
   {$ENDIF}
-  Classes, SysUtils, CustApp, FPJson, JsonParser, ZStream, ZLib,
+  Classes, SysUtils, CustApp, FPJson, JsonParser, ZStream, ZLib, PTCCrt,
   Hardware, Cpu8088, TestMachine;
 
 type
@@ -101,15 +101,23 @@ begin
         Test := TTest.Create(Self);
         try
           Test.LoadTest(Item.Value);
+
+          TextColor(7);
           Write(Test.ToString, ' | ');
 
           if Machine.RunTest(Test, Errors) then
-            Writeln('OK')
+          begin
+            TextColor(2);
+            Writeln('OK');
+            TextColor(7);
+          end
           else
           begin
+            TextColor(4);
             Writeln('ERROR');
             for TestError in Errors do
               Writeln('| --> ', TestError);
+            TextColor(7);
             Halt(1);
           end;
         finally
