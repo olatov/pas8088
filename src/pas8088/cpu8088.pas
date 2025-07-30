@@ -1093,7 +1093,7 @@ procedure TFlagRegister.UpdateAfterRor8(AOld, ACount: Byte;
 begin
   if ACount = 0 then Exit;
   CF := LastShifted;
-  if ACount = 1 then OF_ := (AResult and $C0) in [$40, $80];
+  OF_ := (AResult and $C0) in [$40, $80];
 end;
 
 procedure TFlagRegister.UpdateAfterRor16(AOld, ACount: Word;
@@ -1101,7 +1101,7 @@ procedure TFlagRegister.UpdateAfterRor16(AOld, ACount: Word;
 begin
   if ACount = 0 then Exit;
   CF := LastShifted;
-  if ACount = 1 then OF_ := (Hi(AResult) and $C0) in [$40, $80];
+  OF_ := (Hi(AResult) and $C0) in [$40, $80];
 end;
 
 procedure TFlagRegister.UpdateAfterRol8(AOld, ACount: Word;
