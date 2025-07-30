@@ -1113,7 +1113,7 @@ procedure TFlagRegister.UpdateAfterRol8(AOld, ACount: Word;
 begin
   if ACount = 0 then Exit;
   CF := ALastShifted;
-  if ACount = 1 then OF_ := (AResult and $C0) in [$40, $80];
+  if ACount = 1 then OF_ := CF xor AResult.Bits[7];
 end;
 
 procedure TFlagRegister.UpdateAfterRol16(AOld, ACount: Word;
@@ -1121,7 +1121,7 @@ procedure TFlagRegister.UpdateAfterRol16(AOld, ACount: Word;
 begin
   if ACount = 0 then Exit;
   CF := ALastShifted;
-  if ACount = 1 then OF_ := (Hi(AResult) and $C0) in [$40, $80];
+  if ACount = 1 then OF_ := CF xor AResult.Bits[15];
 end;
 
 procedure TFlagRegister.UpdateAfterMul8(AResult: Word);
@@ -4211,7 +4211,7 @@ begin
   Result.Bits[0] := Shifted;
 
   WriteRM8(AModRM, Result);
-  Registers.Flags.UpdateAfterRol8(AOp, Registers.CL, Shifted, Result);
+  Registers.Flags.UpdateAfterRol8(AOp, 1, Shifted, Result);
 end;
 
 procedure TCpu8088.RolRM16Const1(AModRM: TModRM);
