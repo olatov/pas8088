@@ -74,8 +74,8 @@ type
     procedure UpdateAfterDec16(AOld: Word; AResult: Int32);
     procedure UpdateAfterInc8(AOld: Byte; AResult: Int16);
     procedure UpdateAfterInc16(AOld: Word; AResult: Int32);
-    procedure UpdateAfterShl8(AOld: Byte; ACount: Byte; AResult: Byte);
-    procedure UpdateAfterShl16(AOld: Word; ACount: Byte; AResult: Word);
+    procedure UpdateAfterShl8(AOld: Byte; ALastShifted: Boolean; AResult: Byte);
+    procedure UpdateAfterShl16(AOld: Word; ALastShifted: Boolean; AResult: Word);
     procedure UpdateAfterShr8(AOld: Byte; ACount: Byte; AResult: Byte);
     procedure UpdateAfterShr16(AOld: Word; ACount: Byte; AResult: Word);
     procedure UpdateAfterSar8(AResult: Byte; ALastShiftedOut: Boolean);
@@ -1018,41 +1018,25 @@ begin
 end;
 
 procedure TFlagRegister.UpdateAfterShl8(
-  AOld: Byte; ACount: Byte; AResult: Byte);
-var
-  CFMask: array[False..True] of Byte = (0, $80);
+  AOld: Byte; ALastShifted: Boolean; AResult: Byte);
 begin
-  OF_ := False;  { debug }
   UpdateZF8(AResult);
   UpdateSF8(AResult);
   UpdatePF8(AResult);
-  if ACount < 8 then
-    CF := (AOld and (1 shl (8 - ACount)) <> 0)
-  else
-    CF := False;
-
-  if ACount = 1 then OF_ := ((AResult and $80) xor CFMask[CF]) <> 0;
-
-  UpdateAFAdd8(AOld, AResult - AOld, 0, AResult);
+  CF := ALastShifted;
+  OF_ := CF xor AResult.Bits[7];
+  UpdateAFAdd8(AOld, AResult - AOld, 0, AResult)
 end;
 
 procedure TFlagRegister.UpdateAfterShl16(
-  AOld: Word; ACount: Byte; AResult: Word);
-var
-  CFMask: array[False..True] of Word = (0, $8000);
+  AOld: Word; ALastShifted: Boolean; AResult: Word);
 begin
-  OF_ := False;  { debug }
   UpdateZF16(AResult);
   UpdateSF16(AResult);
   UpdatePF16(AResult);
-  if ACount < 16 then
-    CF := (AOld and (1 shl (16 - ACount)) <> 0)
-  else
-    CF := False;
-
-  if ACount = 1 then OF_ := ((AResult and $8000) xor CFMask[CF]) <> 0;
-
-  UpdateAFAdd16(AOld, AResult - AOld, 0, AResult);
+  CF := ALastShifted;
+  OF_ := CF xor AResult.Bits[15];
+  UpdateAFAdd16(AOld, AResult - AOld, 0, AResult)
 end;
 
 procedure TFlagRegister.UpdateAfterShr8(
@@ -4023,7 +4007,7 @@ begin
   AOp := ReadRM8(AModRm);
   Result := AOp shl 1;
   WriteRM8(AModRM, Result);
-  Registers.Flags.UpdateAfterShl8(AOp, 1, Result);
+  Registers.Flags.UpdateAfterShl8(AOp, AOp.Bits[7], Result);
 end;
 
 procedure TCpu8088.ShlRM16Const1(AModRM: TModRM);
@@ -4033,29 +4017,47 @@ begin
   AOp := ReadRM16(AModRM);
   Result := AOp shl 1;
   WriteRM16(AModRM, Result);
-  Registers.Flags.UpdateAfterShl16(AOp, 1, Result);
+  Registers.Flags.UpdateAfterShl16(AOp, AOp.Bits[15], Result);
 end;
 
 procedure TCpu8088.ShlRM8CL(AModRM: TModRM);
 var
-  AOp, Result: Byte;
+  AOp, Result, Prev: Byte;
+  LastShifted: Boolean;
+  I: Integer;
 begin
   AOp := ReadRM8(AModRM);
   if Registers.CL = 0 then Exit;
-  Result := AOp shl Registers.CL;
+  Result := AOp;
+  for I := 1 to Registers.CL do
+  begin
+    Prev := Result;
+    LastShifted := Result.Bits[7];
+    Result := Result shl 1;
+  end;
+
   WriteRM8(AModRM, Result);
-  Registers.Flags.UpdateAfterShl8(AOp, Registers.CL, Result);
+  Registers.Flags.UpdateAfterShl8(Prev, LastShifted, Result);
 end;
 
 procedure TCpu8088.ShlRM16CL(AModRM: TModRM);
 var
-  AOp, Result: Word;
+  AOp, Result, Prev: Word;
+  LastShifted: Boolean;
+  I: Integer;
 begin
   AOp := ReadRM16(AModRM);
   if Registers.CL = 0 then Exit;
-  Result := AOp shl Registers.CL;
+  Result := AOp;
+  for I := 1 to Registers.CL do
+  begin
+    Prev := Result;
+    LastShifted := Result.Bits[15];
+    Result := Result shl 1;
+  end;
+
   WriteRM16(AModRM, Result);
-  Registers.Flags.UpdateAfterShl16(AOp, Registers.CL, Result);
+  Registers.Flags.UpdateAfterShl16(Prev, LastShifted, Result);
 end;
 
 procedure TCpu8088.ShrRM8Const1(AModRM: TModRM);
