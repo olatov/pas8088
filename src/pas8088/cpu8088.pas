@@ -3471,6 +3471,9 @@ begin
   Registers.Flags.UpdateSF8(Remainder);
   Registers.Flags.UpdatePF8(Remainder);
   Registers.Flags.UpdateZF8(Remainder);
+  Registers.Flags.AF := False;
+  Registers.Flags.CF := False;
+  Registers.Flags.OF_ := False;
 end;
 
 procedure TCpu8088.HandleAad;
