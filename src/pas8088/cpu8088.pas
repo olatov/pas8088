@@ -546,6 +546,7 @@ type
     property OnAfterExecution: TInstructionNotifyEvent read FOnAfterExecution write FOnAfterExecution;
     property InterruptHook: TInteruptHook read FInterruptHook write SetInterruptHook;
     procedure RaiseNmi;
+    procedure RaiseDivideError;
     function RaiseHardwareInterrupt(ANumber: Byte): Boolean;
     constructor Create(AOwner: TComponent); override;
     procedure Reset;
@@ -1553,6 +1554,12 @@ end;
 procedure TCpu8088.RaiseNmi;
 begin
   FNmiPending := True;
+end;
+
+procedure TCpu8088.RaiseDivideError;
+begin
+  FHardwareInterrupt.Pending := True;
+  FHardwareInterrupt.Number := 0;
 end;
 
 procedure TCpu8088.RaiseSoftwareInterrupt(ANumber: Byte);
@@ -3460,10 +3467,17 @@ var
   Remainder: Word = 0;
   Base: Byte;
 begin
+  Registers.Flags.AF := False;
+  Registers.Flags.CF := False;
+  Registers.Flags.OF_ := False;
+
   Base := FetchCodeByte;
   if Base = 0 then
   begin
-    RaiseHardwareInterrupt(0);
+    RaiseDivideError;
+    Registers.Flags.UpdateSF8(0);
+    Registers.Flags.UpdatePF8(0);
+    Registers.Flags.UpdateZF8(0);
     Exit;
   end;
 
@@ -3473,9 +3487,6 @@ begin
   Registers.Flags.UpdateSF8(Remainder);
   Registers.Flags.UpdatePF8(Remainder);
   Registers.Flags.UpdateZF8(Remainder);
-  Registers.Flags.AF := False;
-  Registers.Flags.CF := False;
-  Registers.Flags.OF_ := False;
 end;
 
 procedure TCpu8088.HandleAad;
@@ -4732,10 +4743,14 @@ begin
   begin
     FNmiPending := False;
     EnterISR(2);
+    Exit;
   end;
 
-  if FHardwareInterrupt.Pending and Registers.Flags.IF_ then
+  if FHardwareInterrupt.Pending and (Registers.Flags.IF_ or (FHardwareInterrupt.Number = 0)) then
+  begin
     HandleHardwareInterrupt;
+    Exit;
+  end;
 
   if Halted then Exit;
 
