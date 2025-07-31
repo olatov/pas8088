@@ -316,12 +316,17 @@ end;
 function TTestMachine.RunTest(ATest: TTest; out AErrors: TStringArray): Boolean;
 var
   Errors: TStringArray;
+  Counter: Integer;
 begin
   LoadTest(ATest);
 
-  repeat
+  Counter := 0;
+  while CPU.CurrentInstruction.Repeating or (Cpu.Registers.IP <> ATest.Final.Regs['ip']) do
+  begin
+    Inc(Counter);
+    if Counter > 100 then Break;
     Cpu.Tick;
-  until not CPU.CurrentInstruction.Repeating;
+  end;
 
   Result := VerifyTest(ATest, Errors);
   AErrors := Errors;
