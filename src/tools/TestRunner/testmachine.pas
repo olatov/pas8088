@@ -5,7 +5,7 @@ unit TestMachine;
 interface
 
 uses
-  Classes, SysUtils, FPjson, Generics.Collections, ZDeflate,
+  Classes, SysUtils, FPjson, Generics.Collections, ZDeflate, Nullable,
   Hardware, Cpu8088;
 
 type
@@ -317,16 +317,25 @@ function TTestMachine.RunTest(ATest: TTest; out AErrors: TStringArray): Boolean;
 var
   Errors: TStringArray;
   Counter: Integer;
+  Value: Word;
+  FinalIP: specialize TNullable<Word>;
 begin
   LoadTest(ATest);
 
+  if ATest.Final.Regs.TryGetValue('ip', Value) then
+    FinalIP := Value
+  else
+    FinalIP.Clear;
+
   Counter := 0;
-  while CPU.CurrentInstruction.Repeating or (Cpu.Registers.IP <> ATest.Final.Regs['ip']) do
-  begin
+  repeat
+    if FinalIP.HasValue and (Cpu.Registers.IP = FinalIP.Value)
+      and (not Cpu.CurrentInstruction.Repeating) then Break;
+
     Inc(Counter);
-    if Counter > 100 then Break;
     Cpu.Tick;
-  end;
+    { Break; }
+  until Counter > 100000;
 
   Result := VerifyTest(ATest, Errors);
   AErrors := Errors;
