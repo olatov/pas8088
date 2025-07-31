@@ -1104,10 +1104,10 @@ begin
   CF := Hi(AResult) <> 0;
   OF_ := CF;
 
-  SF := False; { for debug }
-  ZF := False; { for debug }
-  AF := False; { for debug }
-  PF := False; { for debug }
+  UpdatePF8(Hi(AResult));
+  UpdateZF8(Hi(AResult));
+  UpdateSF16(AResult);
+  AF := False;
 end;
 
 procedure TFlagRegister.UpdateAfterMul16(AResult: DWord);
@@ -1116,9 +1116,9 @@ begin
   OF_ := CF;
 
   SF := Int32(AResult) < 0; { for debug }
-  ZF := False; { for debug }
+  UpdatePF16(Hi(AResult));
+  UpdateZF16(Hi(AResult));
   AF := False; { for debug }
-  PF := FParityTable[AResult and $FF] ; { for debug }
 end;
 
 procedure TFlagRegister.UpdateAfterImul8(AResult: Int16);
