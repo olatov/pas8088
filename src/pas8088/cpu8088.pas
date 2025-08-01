@@ -1135,7 +1135,7 @@ end;
 
 procedure TFlagRegister.UpdateAfterImul16(AResult: Int32);
 begin
-  CF := InRange(AResult, Int16.MinValue, Int16.MaxValue);
+  CF := AResult <> Int16(Lo(AResult));
   OF_ := CF;
 end;
 
@@ -3291,7 +3291,7 @@ begin
   ModRM := FetchModRM;
   case ModRM.Reg of
     0: TestRM16Imm16(ModRM, FetchCodeWord);
-    1: Exception.CreateFmt('Invalid GRP3 extension: %d', [ModRM.Reg]);
+    1: raise Exception.CreateFmt('Invalid GRP3 extension: %d', [ModRM.Reg]);
     2: NotRM16(ModRM);
     3: NegRM16(ModRM);
     4: MulAXRM16(ModRM);
@@ -3673,7 +3673,7 @@ begin
           Dec(Value, 2);
         Push(Value);
       end;
-    7: Exception.CreateFmt('Invalid GRP5 extension: %d', [ModRM.Reg]);
+    7: raise Exception.CreateFmt('Invalid GRP5 extension: %d', [ModRM.Reg]);
   end;
 end;
 
@@ -4494,7 +4494,7 @@ end;
 
 procedure TCpu8088.TestRM16Imm16(AModRM: TModRM; AImm: Word);
 begin
-  Registers.Flags.UpdateAfterAnd16(ReadRM16(AModRm) and AImm);
+  Registers.Flags.UpdateAfterAnd16(ReadRM16(AModRM) and AImm);
 end;
 
 procedure TCpu8088.MulALRM8(AModRM: TModRM);
@@ -4541,14 +4541,14 @@ begin
   Divisor := ReadRM8(AModRM);
   if Divisor = 0 then
   begin
-    RaiseHardwareInterrupt(0);
+    RaiseDivideError;
     Exit;
   end;
 
   DivMod(Registers.AX, Divisor, Result, Remainder);
   if Result > Byte.MaxValue then
   begin
-    RaiseHardwareInterrupt(0);
+    RaiseDivideError;
     Exit;
   end;
 
@@ -4566,7 +4566,7 @@ begin
   Divisor := ReadRM16(AModRM);
   if Divisor = 0 then
   begin
-    RaiseHardwareInterrupt(0);
+    RaiseDivideError;
     Exit;
   end;
 
@@ -4574,7 +4574,7 @@ begin
   DivMod(Dividend, Divisor, Result, Remainder);
   if Result > Word.MaxValue then
   begin
-    RaiseHardwareInterrupt(0);
+    RaiseDivideError;
     Exit;
   end;
 
@@ -4591,7 +4591,7 @@ begin
   Divisor := ReadRM8(AModRM);
   if Divisor = 0 then
   begin
-    RaiseHardwareInterrupt(0);
+    RaiseDivideError;
     Exit;
   end;
 
@@ -4599,7 +4599,7 @@ begin
   Remainder := Int16(Registers.AX) mod Divisor;
   if not InRange(Result, Int8.MinValue, Int8.MaxValue) then
   begin
-    RaiseHardwareInterrupt(0);
+    RaiseDivideError;
     Exit;
   end;
 
@@ -4617,7 +4617,7 @@ begin
   Divisor := ReadRM16(AModRM);
   if Divisor = 0 then
   begin
-    RaiseHardwareInterrupt(0);
+    RaiseDivideError;
     Exit;
   end;
 
@@ -4625,7 +4625,7 @@ begin
   DivMod(Dividend, Divisor, Result, Remainder);
   if not InRange(Result, Int16.MinValue, Int16.MaxValue) then
   begin
-    RaiseHardwareInterrupt(0);
+    RaiseDivideError;
     Exit;
   end;
 
