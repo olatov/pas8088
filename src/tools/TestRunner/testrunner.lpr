@@ -14,7 +14,12 @@ type
   { TApplication }
 
   TApplication = class(TCustomApplication)
+  private
+    FFlagMask: Word;
+    procedure SetFlagMask(AValue: Word);
   protected
+    property FlagMask: Word read FFlagMask write SetFlagMask;
+    function BuildFlagMask(AFlags: String): Word;
     procedure DoRun; override;
   public
     constructor Create(TheOwner: TComponent); override;
@@ -25,27 +30,61 @@ type
 
 { TApplication }
 
+procedure TApplication.SetFlagMask(AValue: Word);
+begin
+  if FFlagMask = AValue then Exit;
+  FFlagMask := AValue;
+end;
+
+function TApplication.BuildFlagMask(AFlags: String): Word;
+var
+  Flag: Char;
+begin
+  Result := 0;
+  for Flag in AFlags.ToLower.Trim do
+    case Flag of
+      's': Result.SetBit(Ord(TFlagRegister.TFlags.flagS));
+      'z': Result.SetBit(Ord(TFlagRegister.TFlags.flagZ));
+      'p': Result.SetBit(Ord(TFlagRegister.TFlags.flagP));
+      'c': Result.SetBit(Ord(TFlagRegister.TFlags.flagC));
+      'o': Result.SetBit(Ord(TFlagRegister.TFlags.flagO));
+      'a': Result.SetBit(Ord(TFlagRegister.TFlags.flagA));
+      'd': Result.SetBit(Ord(TFlagRegister.TFlags.flagD));
+      'i': Result.SetBit(Ord(TFlagRegister.TFlags.flagI));
+      't': Result.SetBit(Ord(TFlagRegister.TFlags.flagT));
+    else
+      raise Exception.CreateFmt('Invalid flag: "%s"', [Flag]);
+    end;
+end;
+
 procedure TApplication.DoRun;
 var
   ErrorMsg: String;
   TestFile: String;
 begin
   // quick check parameters
-  ErrorMsg := CheckOptions('h', 'help');
-  if ErrorMsg <> '' then begin
+  ErrorMsg := CheckOptions('f:h', ['flags:', 'help']);
+  if ErrorMsg <> '' then
+  begin
     ShowException(Exception.Create(ErrorMsg));
     Terminate;
     Exit;
   end;
 
   // parse parameters
-  if HasOption('h', 'help') then begin
+  if HasOption('h', 'help') then
+  begin
     WriteHelp;
     Terminate;
     Exit;
   end;
 
-  for TestFile in GetNonOptions('h', ['help']) do
+  if HasOption('f', 'flags') then
+    FlagMask := BuildFlagMask(GetOptionValue('f', 'flags'))
+  else
+    FlagMask := $FFFF;
+
+  for TestFile in GetNonOptions('f:h', ['flags:', 'help']) do
     RunTestFile(TestFile);
 
   // stop program loop
@@ -105,7 +144,7 @@ begin
           TextColor(7);
           Write(Test.ToString, ' | ');
 
-          if Machine.RunTest(Test, Errors) then
+          if Machine.RunTest(Test, Errors, FlagMask) then
           begin
             TextColor(2);
             Writeln('OK');

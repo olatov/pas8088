@@ -74,14 +74,15 @@ type
 
   private
     procedure LoadTest(ATest: TTest);
-    function VerifyTest(ATest: TTest; out AErrors: TStringArray): Boolean;
+    function VerifyTest(ATest: TTest; out AErrors: TStringArray; AFlagMask: Word = $FF): Boolean;
 
   public
     Cpu: TCpu8088;
     MemoryBus: IMemoryBus;
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
-    function RunTest(ATest: TTest; out AErrors: TStringArray): Boolean;
+    function RunTest(ATest: TTest; out AErrors: TStringArray;
+      AFlagMask: Word = $FF): Boolean;
   end;
 
 implementation
@@ -208,10 +209,11 @@ begin
     MemoryBus.InvokeWrite(Nil, RamItem.Key, RamItem.Value);
 end;
 
-function TTestMachine.VerifyTest(
-  ATest: TTest; out AErrors: TStringArray): Boolean;
+function TTestMachine.VerifyTest(ATest: TTest; out AErrors: TStringArray;
+  AFlagMask: Word): Boolean;
 
-  function VerifyRegister(ARegister: String; AExpected: Word; out AActual: Word): Boolean;
+  function VerifyRegister(ARegister: String; AExpected: Word; out AActual: Word;
+    AFlagMask: Word = $FF): Boolean;
   begin
     case ARegister of
       'ax': AActual := Cpu.Registers.AX;
@@ -227,7 +229,7 @@ function TTestMachine.VerifyTest(
       'es': AActual := Cpu.Registers.ES;
       'ss': AActual := Cpu.Registers.SS;
       'ip': AActual := Cpu.Registers.IP;
-      'flags': AActual := Cpu.Registers.Flags.GetWord;
+      'flags': AActual := Cpu.Registers.Flags.GetWord and AFlagMask;
     end;
 
     Result := AExpected = AActual;
@@ -252,7 +254,8 @@ begin
   for Reg in ATest.Final.Regs.Keys do
   begin
     ExpectedWord := ATest.Final.Regs[Reg];
-    if not VerifyRegister(Reg, ExpectedWord, ActualWord) then
+    if Reg = 'flags' then ExpectedWord := ExpectedWord and AFlagMask;
+    if not VerifyRegister(Reg, ExpectedWord, ActualWord, AFlagMask) then
     begin
       Insert(
         Format('%s: expected: %.4X, actual: %.4X',
@@ -313,7 +316,8 @@ begin
   inherited Destroy;
 end;
 
-function TTestMachine.RunTest(ATest: TTest; out AErrors: TStringArray): Boolean;
+function TTestMachine.RunTest(ATest: TTest; out AErrors: TStringArray;
+  AFlagMask: Word): Boolean;
 var
   Errors: TStringArray;
   Counter: Integer;
@@ -337,7 +341,7 @@ begin
     { Break; }
   until Counter > 100000;
 
-  Result := VerifyTest(ATest, Errors);
+  Result := VerifyTest(ATest, Errors, AFlagMask);
   AErrors := Errors;
 end;
 

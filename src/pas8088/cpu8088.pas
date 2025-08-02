@@ -1127,10 +1127,6 @@ begin
   OF_ := CF;
 
   { Todo: undefined flags logic }
-  UpdateSF16(AResult);
-  UpdatePF8(Hi(AResult));
-  UpdateZF8(Hi(AResult));
-  AF := False;
 end;
 
 procedure TFlagRegister.UpdateAfterImul16(AResult: Int32);
