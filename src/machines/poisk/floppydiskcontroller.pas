@@ -523,6 +523,8 @@ function TFloppyDiskController.OnIORead(
 var
   I: Integer;
 begin
+  Result := False;
+
   case AAddress of
     ControlStatIOPort:
       begin
