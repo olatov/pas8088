@@ -120,56 +120,64 @@ var
   Errors: TStringArray;
   TestError: String;
 begin
-  Machine := TTestMachine.Create(Self);
   try
-    Writeln('Test file: ', AFileName);
-
-    TestFileStream := TGZFileStream.Create(AFileName, gzopenread);
-    TestStream := TMemoryStream.Create;
-    TestStream.CopyFrom(TestFileStream, 0);
-    FreeAndNil(TestFileStream);
-    TestStream.Seek(0, soBeginning);
+    Machine := TTestMachine.Create(Self);
     try
-      TestJson := GetJSON(TestStream);
-      TestsArray := TestJson as TJSONArray;
-      if not Assigned(TestsArray) then
-        raise Exception.Create('Test file is not valid');
+      Writeln('Test file: ', AFileName);
 
-      for Item in TestsArray do
-      begin
-        Test := TTest.Create(Self);
-        try
-          Test.LoadTest(Item.Value);
+      TestFileStream := TGZFileStream.Create(AFileName, gzopenread);
+      TestStream := TMemoryStream.Create;
+      TestStream.CopyFrom(TestFileStream, 0);
+      FreeAndNil(TestFileStream);
+      TestStream.Seek(0, soBeginning);
+      try
+        TestJson := GetJSON(TestStream);
+        TestsArray := TestJson as TJSONArray;
+        if not Assigned(TestsArray) then
+          raise Exception.Create('Test file is not valid');
 
-          TextColor(7);
-          Write(Test.ToString, ' | ');
+        for Item in TestsArray do
+        begin
+          Test := TTest.Create(Self);
+          try
+            Test.LoadTest(Item.Value);
 
-          if Machine.RunTest(Test, Errors, FlagMask) then
-          begin
-            TextColor(2);
-            Writeln('OK');
             TextColor(7);
-          end
-          else
-          begin
-            TextColor(4);
-            Writeln('ERROR');
-            TextColor(14);
-            for TestError in Errors do
-              Writeln('| --> ', TestError);
-            TextColor(7);
-            Halt(1);
+            Write(Test.ToString, ' | ');
+
+            if Machine.RunTest(Test, Errors, FlagMask) then
+            begin
+              TextColor(2);
+              Writeln('OK');
+              TextColor(7);
+            end
+            else
+            begin
+              TextColor(4);
+              Writeln('ERROR');
+              TextColor(14);
+              for TestError in Errors do
+                Writeln('| --> ', TestError);
+              TextColor(7);
+              Halt(1);
+            end;
+          finally
+            FreeAndNil(Test);
           end;
-        finally
-          FreeAndNil(Test);
         end;
-      end;
 
+      finally
+        FreeAndNil(TestStream);
+      end;
     finally
-      FreeAndNil(TestStream);
+      FreeAndNil(Machine);
     end;
-  finally
-    FreeAndNil(Machine);
+  except
+    on E: Exception do
+      begin
+        Writeln('ERROR: ', E.Message);
+        Halt(1);
+      end;
   end;
 end;
 
@@ -178,7 +186,10 @@ var
 begin
   Application := TApplication.Create(nil);
   Application.Title := 'Test Runner';
-  Application.Run;
-  Application.Free;
+  try
+    Application.Run;
+  finally
+    FreeAndNil(Application);
+  end;
 end.
 
