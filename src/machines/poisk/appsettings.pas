@@ -56,6 +56,11 @@ type
       ControllerRom: String;
     end;
 
+    Debugger: record
+      Enabled: Boolean;
+      Port: Word;
+    end;
+
     procedure SaveToFile(AFileName: String);
     procedure LoadFromFile(AFileName: String);
     procedure Load;
@@ -97,6 +102,9 @@ begin
     Config.WriteBool('FloppyDisk', 'Enabled', FloppyDisk.Enabled);
     Config.WriteInteger('FloppyDisk', 'Drives', FloppyDisk.Drives);
     Config.WriteString('FloppyDisk', 'ControllerRom', FloppyDisk.ControllerRom);
+
+    Config.WriteBool('Debugger', 'Enabled', Debugger.Enabled);
+    Config.WriteInteger('Debugger', 'Port', Debugger.Port);
   finally
     FreeAndNil(Config);
   end;
@@ -147,6 +155,9 @@ begin
     FloppyDisk.Drives := Config.ReadInteger('FloppyDisk', 'Drives', 2);
     FloppyDisk.ControllerRom := Config.ReadString(
       'FloppyDisk', 'ControllerRom', 'rom/fdc-b504.rom');
+
+    Debugger.Enabled := Config.ReadBool('Debugger', 'Enabled', False);
+    Debugger.Port := Config.ReadInteger('Debugger', 'Port', 3456);
   finally
     FreeAndNil(Config);
   end;

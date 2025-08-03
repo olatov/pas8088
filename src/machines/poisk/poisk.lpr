@@ -279,7 +279,8 @@ constructor TApplication.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
 
-  Debugger := TWebDebugger.Create(Self);
+  if Settings.Debugger.Enabled then
+    Debugger := TWebDebugger.Create(Self, Settings.Debugger.Port);
 
   if not DumpFile.IsEmpty then
   begin
@@ -312,8 +313,6 @@ begin
 
   FreeAndNil(FComputer);
 
-  Settings.Save;
-
   FreeAndNil(FOsdTextItems);
   FreeAndNil(FLogWriter);
   FreeAndNil(FDumpStream);
@@ -339,10 +338,7 @@ begin
   FAudioBuffer := TRingBuffer.Create(Self, (SpeakerSampleRate div 4) - 1);
 
   if not Settings.Machine.BiosRom.IsEmpty then
-  begin
-    FBiosRomStream := TMemoryStream.Create;
-    TMemoryStream(FBiosRomStream).LoadFromFile(Settings.Machine.BiosRom);
-  end;
+    FBiosRomStream := TFileStream.Create(Settings.Machine.BiosRom, fmOpenRead);
 
   InitAudioDevice;
 
@@ -608,8 +604,11 @@ begin
   Computer.Cpu.OnAfterInstruction := @OnAfterInstruction;
   Computer.Cpu.OnBeforeExecution := @OnBeforeExecution;
 
-  Debugger.Machine := Computer;
-  Debugger.Start;
+  if Assigned(Debugger) then
+  begin
+    Debugger.Machine := Computer;
+    Debugger.Start;
+  end;
 
   LinesLoc := GetShaderLocation(GfxShader, 'lines');
   SetShaderValue(GfxShader, LinesLoc, @LinesCount, SHADER_UNIFORM_FLOAT);
@@ -795,6 +794,10 @@ begin
 
     EndDrawing;
   end;
+
+  SetAudioStreamCallback(SpeakerAudioStream, Nil);
+
+  if Assigned(Debugger) then Debugger.Stop;
 end;
 
 procedure TApplication.SetDebugger(AValue: TWebDebugger);
