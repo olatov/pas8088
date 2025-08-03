@@ -333,12 +333,14 @@ begin
 
   Counter := 0;
   repeat
-    if FinalIP.HasValue and (Cpu.Registers.IP = FinalIP.Value)
+    if FinalIP.HasValue
+      and (Cpu.Registers.IP = FinalIP.Value)
       and (not Cpu.CurrentInstruction.Repeating) then Break;
 
     Inc(Counter);
     Cpu.Tick;
-    { Break; }
+
+    if not FinalIP.HasValue then Break;
   until Counter > 100000;
 
   Result := VerifyTest(ATest, Errors, AFlagMask);
