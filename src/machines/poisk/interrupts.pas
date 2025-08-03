@@ -92,6 +92,7 @@ end;
 
 constructor TPic8259.Create(AOwner: TComponent; AVectorBase: Byte);
 begin
+  inherited Create(AOwner);
   VectorBase := AVectorBase;
 end;
 
