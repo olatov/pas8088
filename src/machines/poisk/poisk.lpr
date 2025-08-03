@@ -360,6 +360,8 @@ begin
 
   FTarget := LoadRenderTexture(640, 400);
 
+  SetTextureWrap(FTarget.Texture, TEXTURE_WRAP_CLAMP);
+
   if Settings.Video.TextureFilter then
     SetTextureFilter(FTarget.Texture, TEXTURE_FILTER_BILINEAR);
 
