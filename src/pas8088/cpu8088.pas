@@ -85,6 +85,7 @@ type
     procedure UpdateAfterMul16(AResult: DWord);
     procedure UpdateAfterImul8(AResult: Int16);
     procedure UpdateAfterImul16(AResult: Int32);
+    procedure UpdateAfterSetMo;
   public
     type
       TFlags = (
@@ -420,6 +421,7 @@ type
     procedure HandleGRP2RM16CL; { $D3 }
     procedure HandleAam;  { $D4 }
     procedure HandleAad;  { $D5 }
+    procedure HandleSalc;  { $D6 }
     procedure HandleXlat;  { $D7 }
 
     procedure HandleLoope;  { $E0 }
@@ -533,6 +535,8 @@ type
     procedure IdivAXRM16(AModRM: TModRM);
     procedure IncRM8(AModRM: TModRM);
     procedure IncRM16(AModRM: TModRM);
+    procedure SetMoRM8(AModRM: TModRM);
+    procedure SetMoRM16(AModRM: TModRM);
     procedure HandleRepetition;
   public
     function DumpCurrentInstruction: String;
@@ -1133,6 +1137,16 @@ procedure TFlagRegister.UpdateAfterImul16(AResult: Int32);
 begin
   CF := AResult <> Int16(Lo(AResult));
   OF_ := CF;
+end;
+
+procedure TFlagRegister.UpdateAfterSetMo;
+begin
+  AF := False;
+  ZF := False;
+  OF_ := False;
+  SF := True;
+  PF := True;
+  CF := False;
 end;
 
 procedure TFlagRegister.UpdateAfterSar16(AResult: Word; ALastShiftedOut: Boolean);
@@ -1949,7 +1963,7 @@ begin
       $D3:      FInstructionHandlers[I] := @HandleGRP2RM16CL;
       $D4:      FInstructionHandlers[I] := @HandleAam;
       $D5:      FInstructionHandlers[I] := @HandleAad;
-      { $D6 [n/a] }
+      $D6:      FInstructionHandlers[I] := @HandleSalc;
       $D7:      FInstructionHandlers[I] := @HandleXlat;
       $D8..$DF: FInstructionHandlers[I] := @HandleFpuInstruction; { fpu, fetch but do nothing }
       $E0:      FInstructionHandlers[I] := @HandleLoopne;
@@ -3269,8 +3283,9 @@ var
 begin
   ModRM := FetchModRM;
   case ModRM.Reg of
-    0: TestRM8Imm8(ModRM, FetchCodeByte);
-    1: raise Exception.CreateFmt('Invalid GRP3 extension: %d', [ModRM.Reg]);
+    0, 1:
+      { Note: Ext 1 is undefined, yet it's same as Ext 0. }
+      TestRM8Imm8(ModRM, FetchCodeByte);
     2: NotRM8(ModRM);
     3: NegRM8(ModRM);
     4: MulALRM8(ModRM);
@@ -3286,8 +3301,9 @@ var
 begin
   ModRM := FetchModRM;
   case ModRM.Reg of
-    0: TestRM16Imm16(ModRM, FetchCodeWord);
-    1: raise Exception.CreateFmt('Invalid GRP3 extension: %d', [ModRM.Reg]);
+    0, 1:
+      { Note: Ext 1 is undefined, yet it's same as Ext 0. }
+      TestRM16Imm16(ModRM, FetchCodeWord);
     2: NotRM16(ModRM);
     3: NegRM16(ModRM);
     4: MulAXRM16(ModRM);
@@ -3307,6 +3323,7 @@ var
   Displacement: Word;
 begin
   Displacement := FetchCodeWord;
+  Writeln(Format('SP: %.4X, Disp: %.4X', [Registers.SP, Displacement]));
   Registers.IP := Pop;
   Registers.SP := Registers.SP + Displacement;
 end;
@@ -3405,7 +3422,7 @@ begin
     3: RcrRM8Const1(ModRM);
     4: ShlRM8Const1(ModRM);
     5: ShrRM8Const1(ModRM);
-    6: raise Exception.CreateFmt('Invalid GRP2 extension: %d', [ModRM.Reg]);
+    6: SetMoRM8(ModRM);
     7: SarRM8Const1(ModRM);
   end;
 end;
@@ -3422,7 +3439,7 @@ begin
     3: RcrRM16Const1(ModRM);
     4: ShlRM16Const1(ModRM);
     5: ShrRM16Const1(ModRM);
-    6: raise Exception.CreateFmt('Invalid GRP2 extension: %d', [ModRM.Reg]);
+    6: SetMoRM16(ModRM);
     7: SarRM16Const1(ModRM);
   end;
 end;
@@ -3439,7 +3456,7 @@ begin
     3: RcrRM8CL(ModRM);
     4: ShlRM8CL(ModRM);
     5: ShrRM8CL(ModRM);
-    6: raise Exception.CreateFmt('Invalid GRP2 extension: %d', [ModRM.Reg]);
+    6: SetMoRM8(ModRM);
     7: SarRM8CL(ModRM);
   end;
 end;
@@ -3456,7 +3473,7 @@ begin
     3: RcrRM16CL(ModRM);
     4: ShlRM16CL(ModRM);
     5: ShrRM16CL(ModRM);
-    6: raise Exception.CreateFmt('Invalid GRP2 extension: %d', [ModRM.Reg]);
+    6: SetMoRM16(ModRM);
     7: SarRM16CL(ModRM);
   end;
 end;
@@ -3507,6 +3524,11 @@ begin
   Registers.Flags.UpdateCFAdd8(AOp, BOp, 0, Result);
   Registers.Flags.UpdateOFAdd8(AOp, BOp, 0, Result);
   Registers.Flags.UpdateAFAdd8(AOp, BOp, 0, Result);
+end;
+
+procedure TCpu8088.HandleSalc;
+begin
+  Registers.AL := IfThen(Registers.Flags.CF, $FF, 0);
 end;
 
 procedure TCpu8088.HandleXlat;
@@ -3662,14 +3684,14 @@ begin
     5: JumpFar(
          ReadMemoryWord(ModRM.Segment, ModRM.EffectiveAddr + 2),
          ReadMemoryWord(ModRM.Segment, ModRM.EffectiveAddr));
-    6:
+    6, 7:
+      { Note: Ext 7 is undefined, yet it's same as Ext 6. }
       begin
         Value := ReadRM16(ModRM);
         if (ModRM.Mod_ = modRegister) and (TRegisters.TRegIndex16(ModRM.Rm) = riSP) then
           Dec(Value, 2);
         Push(Value);
       end;
-    7: raise Exception.CreateFmt('Invalid GRP5 extension: %d', [ModRM.Reg]);
   end;
 end;
 
@@ -4649,6 +4671,20 @@ begin
   Result := AOp + 1;
   WriteRM16(AModRM, Result);
   Registers.Flags.UpdateAfterInc16(AOp, Result);
+end;
+
+procedure TCpu8088.SetMoRM8(AModRM: TModRM);
+begin
+  ReadRM8(AModRM);
+  WriteRM8(AModRM, $FF);
+  Registers.Flags.UpdateAfterSetMo;
+end;
+
+procedure TCpu8088.SetMoRM16(AModRM: TModRM);
+begin
+  ReadRM16(AModRM);
+  WriteRM16(AModRM, $FFFF);
+  Registers.Flags.UpdateAfterSetMo;
 end;
 
 function TCpu8088.CheckRepetition: Boolean; { for debug }

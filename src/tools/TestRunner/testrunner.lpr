@@ -6,8 +6,8 @@ uses
   {$IFDEF UNIX}
   cthreads,
   {$ENDIF}
-  Classes, SysUtils, CustApp, FPJson, JsonParser, ZStream, ZLib, PTCCrt,
-  Hardware, Cpu8088, TestMachine;
+  Classes, SysUtils, CustApp, FPJson, JsonParser, ZStream, PTCCrt,
+  Cpu8088, TestMachine;
 
 type
 
