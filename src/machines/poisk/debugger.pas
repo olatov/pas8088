@@ -47,14 +47,16 @@ type
   private
     FServer: TServer;
     procedure SetServer(AValue: TServer);
-  public
-    const Port = 3456;
   private
     FMachine: TMachine;
+    FPort: Word;
     procedure SetMachine(AValue: TMachine);
+    procedure SetPort(AValue: Word);
     property Server: TServer read FServer write SetServer;
   public
+    property Port: Word read FPort write SetPort;
     property Machine: TMachine read FMachine write SetMachine;
+    constructor Create(AOwner: TComponent; APort: Word = 3456); reintroduce;
     destructor Destroy; override;
     procedure Start;
     procedure Stop;
@@ -74,6 +76,18 @@ procedure TWebDebugger.SetMachine(AValue: TMachine);
 begin
   if FMachine = AValue then Exit;
   FMachine := AValue;
+end;
+
+procedure TWebDebugger.SetPort(AValue: Word);
+begin
+  if FPort = AValue then Exit;
+  FPort := AValue;
+end;
+
+constructor TWebDebugger.Create(AOwner: TComponent; APort: Word);
+begin
+  inherited Create(AOwner);
+  Port := APort;
 end;
 
 destructor TWebDebugger.Destroy;
