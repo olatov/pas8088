@@ -3323,7 +3323,6 @@ var
   Displacement: Word;
 begin
   Displacement := FetchCodeWord;
-  Writeln(Format('SP: %.4X, Disp: %.4X', [Registers.SP, Displacement]));
   Registers.IP := Pop;
   Registers.SP := Registers.SP + Displacement;
 end;
