@@ -34,8 +34,11 @@ type
 
   TFlagRegister = class(TComponent)
   private
-    FBits: TBits;
-    FParityTable: TBits;
+    type
+      TParityTable = array[0..$FF] of Boolean;
+  private
+    FValue: Word;
+    FParityTable: TParityTable;
     function GetAF: Boolean;
     function GetCF: Boolean;
     function GetDF: Boolean;
@@ -57,8 +60,8 @@ type
     procedure SetZF(AValue: Boolean);
     procedure UpdateAfterAdd8(AAOp, ABOp, ACarryIn: Byte; AResult: Int16);
     procedure UpdateAfterAdd16(AAOp, ABOp, ACarryIn: Word; AResult: Int32);
-    procedure UpdateAfterRol16(AOld, ACount: Word; ALastShifted: Boolean; AResult: Word);
-    procedure UpdateAfterRol8(AOld, ACount: Word; ALastShifted: Boolean; AResult: Byte);
+    procedure UpdateAfterRol16(ACount: Word; ALastShifted: Boolean; AResult: Word);
+    procedure UpdateAfterRol8(ACount: Word; ALastShifted: Boolean; AResult: Byte);
     procedure UpdateAfterSar16(AResult: Word; ALastShiftedOut: Boolean);
     procedure UpdateAfterSub16(AOld, AChange, ACarryIn: Word; AResult: Int32);
     procedure UpdateAfterSub8(AOld, AChange, ACarryIn: Byte; AResult: Int16);
@@ -104,13 +107,12 @@ type
     property DF: Boolean read GetDF write SetDF;
     
     constructor Create(AOwner: TComponent); override;
-    destructor Destroy; override;
     procedure Reset;
-    function GetWord: Word;
-    procedure SetWord(AValue: Word);
+    function GetValue: Word;
+    procedure SetValue(AValue: Word);
     procedure Clear(AFlag: TFlags);
     procedure Set_(AFlag: TFlags);
-    procedure SetValue(AFlag: TFlags; AValue: Boolean);
+    procedure SetFlagValue(AFlag: TFlags; AValue: Boolean);
     function Get(AFlag: TFlags): Boolean;
 
     procedure UpdatePF8(AValue: Byte); inline;
@@ -599,7 +601,7 @@ var
   I, J: Integer;
   Value: Boolean;
 begin
-  for I := 0 To FParityTable.Size - 1 do
+  for I := 0 To High(FParityTable) do
   begin
     Value := True;
     for J := 0 to 7 do
@@ -611,165 +613,140 @@ end;
 
 function TFlagRegister.GetAF: Boolean;
 begin
-  Result := FBits[Ord(flagA)];
+  Result := FValue.Bits[Ord(flagA)];
 end;
 
 function TFlagRegister.GetCF: Boolean;
 begin
-  Result := FBits[Ord(flagC)];
+  Result := FValue.Bits[Ord(flagC)];
 end;
 
 function TFlagRegister.GetDF: Boolean;
 begin
-  Result := FBits[Ord(flagD)];
+  Result := FValue.Bits[Ord(flagD)];
 end;
 
 function TFlagRegister.GetIF: Boolean;
 begin
-  Result := FBits[Ord(flagI)];
+  Result := FValue.Bits[Ord(flagI)];
 end;
 
 function TFlagRegister.GetOF: Boolean;
 begin
-  Result := FBits[Ord(flagO)];
+  Result := FValue.Bits[Ord(flagO)];
 end;
 
 function TFlagRegister.GetPF: Boolean;
 begin
-  Result := FBits[Ord(flagP)];
+  Result := FValue.Bits[Ord(flagP)];
 end;
 
 function TFlagRegister.GetSF: Boolean;
 begin
-  Result := FBits[Ord(flagS)];
+  Result := FValue.Bits[Ord(flagS)];
 end;
 
 function TFlagRegister.GetTF: Boolean;
 begin
-  Result := FBits[Ord(flagT)];
+  Result := FValue.Bits[Ord(flagT)];
 end;
 
 function TFlagRegister.GetZF: Boolean;
 begin
-  Result := FBits[Ord(flagZ)];
+  Result := FValue.Bits[Ord(flagZ)];
 end;
 
 procedure TFlagRegister.SetAF(AValue: Boolean);
 begin
-  FBits[Ord(flagA)] := AValue;
+  FValue.Bits[Ord(flagA)] := AValue;
 end;
 
 procedure TFlagRegister.SetCF(AValue: Boolean);
 begin
-  FBits[Ord(flagC)] := AValue;
+  FValue.Bits[Ord(flagC)] := AValue;
 end;
 
 procedure TFlagRegister.SetDF(AValue: Boolean);
 begin
-  FBits[Ord(flagD)] := AValue;
+  FValue.Bits[Ord(flagD)] := AValue;
 end;
 
 procedure TFlagRegister.SetIF(AValue: Boolean);
 begin
-  FBits[Ord(flagI)] := AValue;
+  FValue.Bits[Ord(flagI)] := AValue;
 end;
 
 procedure TFlagRegister.SetOF(AValue: Boolean);
 begin
-  FBits[Ord(flagO)] := AValue;
+  FValue.Bits[Ord(flagO)] := AValue;
 end;
 
 procedure TFlagRegister.SetPF(AValue: Boolean);
 begin
-  FBits[Ord(flagP)] := AValue;
+  FValue.Bits[Ord(flagP)] := AValue;
 end;
 
 procedure TFlagRegister.SetSF(AValue: Boolean);
 begin
-  FBits[Ord(flagS)] := AValue;
+  FValue.Bits[Ord(flagS)] := AValue;
 end;
 
 procedure TFlagRegister.SetTF(AValue: Boolean);
 begin
-  FBits[Ord(flagT)] := AValue;
+  FValue.Bits[Ord(flagT)] := AValue;
 end;
 
 procedure TFlagRegister.SetZF(AValue: Boolean);
 begin
-  FBits[Ord(flagZ)] := AValue;
+  FValue.Bits[Ord(flagZ)] := AValue;
 end;
 
 constructor TFlagRegister.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
-  FBits := TBits.Create(16);
-  FParityTable := TBits.Create(256);
   InitParityTable;
   Reset;
 end;
 
-destructor TFlagRegister.Destroy;
-begin
-  FreeAndNil(FBits);
-  FreeAndNil(FParityTable);
-  inherited Destroy;
-end;
-
 procedure TFlagRegister.Reset;
 begin
-  FBits.Clearall;
-  FBits.SetOn(1);
+  FValue := $0002;
 end;
 
-function TFlagRegister.GetWord: Word;
-var
-  I: Integer;
+function TFlagRegister.GetValue: Word;
+begin
+  Result := FValue;
+end;
+
+procedure TFlagRegister.SetValue(AValue: Word);
 begin
   {
     Possibly on the 8086/88 (and 80186/88) CPUs,
-    the flags register's bits 12-15 will always be set to 1
+    the flags register's bits 12-15 will always be set to 1.
+    Bit 1 is also set constantly.
   }
 
-  Result := $F000;
-  for I := 0 to 11 do
-    if FBits[I] then
-      Result := Result or (1 shl I);
-end;
-
-procedure TFlagRegister.SetWord(AValue: Word);
-var
-  I: Integer;
-  MaskedValue: Word;
-begin
-  MaskedValue := (AValue and $FFD7) or $0002;
-  for I := 0 to 15 do
-    if MaskedValue.Bits[I] then
-      FBits.SetOn(I)
-    else
-      FBits.Clear(I);
+  FValue := (AValue or $F002) and $FFD7;
 end;
 
 procedure TFlagRegister.Clear(AFlag: TFlags);
 begin
-  FBits.Clear(Ord(AFlag));
+  FValue.ClearBit(Ord(AFlag));
 end;
 
 procedure TFlagRegister.Set_(AFlag: TFlags);
 begin
-  FBits.SetOn(Ord(AFlag));
+  FValue.SetBit(Ord(AFlag));
 end;
 
-procedure TFlagRegister.SetValue(AFlag: TFlags; AValue: Boolean);
+procedure TFlagRegister.SetFlagValue(AFlag: TFlags; AValue: Boolean);
 begin
-  if AValue then
-    FBits.SetOn(Ord(AFlag))
-  else
-    FBits.Clear(Ord(AFlag));
+  FValue.Bits[Ord(AFlag)] := AValue;
 end;
 
 function TFlagRegister.Get(AFlag: TFlags): Boolean;
 begin
-  Result := FBits[Ord(AFlag)];
+  Result := FValue.Bits[Ord(AFlag)];
 end;
 
 procedure TFlagRegister.UpdatePF8(AValue: Byte);
@@ -1087,16 +1064,16 @@ begin
   OF_ := (Hi(AResult) and $C0) in [$40, $80];
 end;
 
-procedure TFlagRegister.UpdateAfterRol8(AOld, ACount: Word;
-  ALastShifted: Boolean; AResult: Byte);
+procedure TFlagRegister.UpdateAfterRol8(ACount: Word; ALastShifted: Boolean;
+  AResult: Byte);
 begin
   if ACount = 0 then Exit;
   CF := ALastShifted;
   OF_ := CF xor AResult.Bits[7];
 end;
 
-procedure TFlagRegister.UpdateAfterRol16(AOld, ACount: Word;
-  ALastShifted: Boolean; AResult: Word);
+procedure TFlagRegister.UpdateAfterRol16(ACount: Word; ALastShifted: Boolean;
+  AResult: Word);
 begin
   if ACount = 0 then Exit;
   CF := ALastShifted;
@@ -1391,7 +1368,7 @@ begin
 
   // FLAGS e X:X:X:X:(OF):(DF):(IF):(TF):(SF):(ZF):X:(AF):X:(PF):X:(CF)
   Builder
-    .Append('Flags [%.4x %s]', [Flags.GetWord, BinStr(Flags.GetWord, 16)]).Append(LineEnding)
+    .Append('Flags [%.4x %s]', [Flags.GetValue, BinStr(Flags.GetValue, 16)]).Append(LineEnding)
     .Append('O(%d) D(%d) I(%d) T(%d) S(%d) Z(%d) A(%d) P(%d) C(%d)',
     [
       IfThen(Flags.Get(Flags.TFlags.flagO), 1, 0),
@@ -2024,7 +2001,7 @@ var
 begin
   if Assigned(InterruptHook) and InterruptHook(Self, ANumber) then Exit;
 
-  Push(Registers.Flags.GetWord, Registers.SS);
+  Push(Registers.Flags.GetValue, Registers.SS);
 
   if not FCurrentInstruction.Repeating then
   begin
@@ -3097,22 +3074,22 @@ end;
 
 procedure TCpu8088.HandlePushf;
 begin
-  Push(Registers.Flags.GetWord);
+  Push(Registers.Flags.GetValue);
 end;
 
 procedure TCpu8088.HandlePopf;
 begin
-  Registers.Flags.SetWord(Pop);
+  Registers.Flags.SetValue(Pop);
 end;
 
 procedure TCpu8088.HandleSahf;
 begin
-  Registers.Flags.SetWord((Registers.Flags.GetWord and $FF00) or Registers.AH);
+  Registers.Flags.SetValue((Registers.Flags.GetValue and $FF00) or Registers.AH);
 end;
 
 procedure TCpu8088.HandleLahf;
 begin
-  Registers.AH := Lo(Registers.Flags.GetWord);
+  Registers.AH := Lo(Registers.Flags.GetValue);
 end;
 
 procedure TCpu8088.HandleMovALDisp16;
@@ -3406,7 +3383,7 @@ procedure TCpu8088.HandleIret;
 begin
   Registers.IP := Pop;
   Registers.CS := Pop;
-  Registers.Flags.SetWord(Pop);
+  Registers.Flags.SetValue(Pop);
 end;
 
 procedure TCpu8088.HandleGRP2RM8Const1;
@@ -4270,7 +4247,7 @@ begin
   Result.Bits[0] := Shifted;
 
   WriteRM8(AModRM, Result);
-  Registers.Flags.UpdateAfterRol8(AOp, 1, Shifted, Result);
+  Registers.Flags.UpdateAfterRol8(1, Shifted, Result);
 end;
 
 procedure TCpu8088.RolRM16Const1(AModRM: TModRM);
@@ -4285,7 +4262,7 @@ begin
   Result.Bits[0] := Shifted;
 
   WriteRM16(AModRM, Result);
-  Registers.Flags.UpdateAfterRol16(AOp, 1, Shifted, Result);
+  Registers.Flags.UpdateAfterRol16(1, Shifted, Result);
 end;
 
 procedure TCpu8088.RolRM8CL(AModRM: TModRM);
@@ -4304,7 +4281,7 @@ begin
   end;
 
   WriteRM8(AModRM, Result);
-  Registers.Flags.UpdateAfterRol8(AOp, Registers.CL, LastShifted, Result);
+  Registers.Flags.UpdateAfterRol8(Registers.CL, LastShifted, Result);
 end;
 
 procedure TCpu8088.RolRM16CL(AModRM: TModRM);
@@ -4323,7 +4300,7 @@ begin
   end;
 
   WriteRM16(AModRM, Result);
-  Registers.Flags.UpdateAfterRol16(AOp, Registers.CL, LastShifted, Result);
+  Registers.Flags.UpdateAfterRol16(Registers.CL, LastShifted, Result);
 end;
 
 procedure TCpu8088.RclRM8Const1(AModRM: TModRM);

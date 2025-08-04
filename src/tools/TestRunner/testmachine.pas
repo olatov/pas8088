@@ -203,7 +203,7 @@ begin
 
   if ATest.Initial.Regs.TryGetValue('ip', Value) then Cpu.Registers.IP := Value;
   if ATest.Initial.Regs.TryGetValue('flags', Value) then
-    Cpu.Registers.Flags.SetWord(Value);
+    Cpu.Registers.Flags.SetValue(Value);
 
   for RamItem in ATest.Initial.Ram do
     MemoryBus.InvokeWrite(Nil, RamItem.Key, RamItem.Value);
@@ -229,7 +229,7 @@ function TTestMachine.VerifyTest(ATest: TTest; out AErrors: TStringArray;
       'es': AActual := Cpu.Registers.ES;
       'ss': AActual := Cpu.Registers.SS;
       'ip': AActual := Cpu.Registers.IP;
-      'flags': AActual := Cpu.Registers.Flags.GetWord and AFlagMask;
+      'flags': AActual := Cpu.Registers.Flags.GetValue and AFlagMask;
     end;
 
     Result := AExpected = AActual;
