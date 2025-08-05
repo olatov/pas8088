@@ -537,8 +537,10 @@ type
     procedure IdivAXRM16(AModRM: TModRM);
     procedure IncRM8(AModRM: TModRM);
     procedure IncRM16(AModRM: TModRM);
-    procedure SetMoRM8(AModRM: TModRM);
-    procedure SetMoRM16(AModRM: TModRM);
+    procedure SetMoRM8Const1(AModRM: TModRM);
+    procedure SetMoRM16Const1(AModRM: TModRM);
+    procedure SetMoRM8CL(AModRM: TModRM);
+    procedure SetMoRM16CL(AModRM: TModRM);
     procedure HandleRepetition;
   public
     function DumpCurrentInstruction: String;
@@ -722,8 +724,8 @@ procedure TFlagRegister.SetValue(AValue: Word);
 begin
   {
     Possibly on the 8086/88 (and 80186/88) CPUs,
-    the flags register's bits 12-15 will always be set to 1.
-    Bit 1 is also set constantly.
+    the flag register's bits 12-15 will always be set to 1.
+    Bit 1 is also set permanently.
   }
 
   FValue := (AValue or $F002) and $FFD7;
@@ -3398,7 +3400,7 @@ begin
     3: RcrRM8Const1(ModRM);
     4: ShlRM8Const1(ModRM);
     5: ShrRM8Const1(ModRM);
-    6: SetMoRM8(ModRM);
+    6: SetMoRM8Const1(ModRM);
     7: SarRM8Const1(ModRM);
   end;
 end;
@@ -3415,7 +3417,7 @@ begin
     3: RcrRM16Const1(ModRM);
     4: ShlRM16Const1(ModRM);
     5: ShrRM16Const1(ModRM);
-    6: SetMoRM16(ModRM);
+    6: SetMoRM16Const1(ModRM);
     7: SarRM16Const1(ModRM);
   end;
 end;
@@ -3432,7 +3434,7 @@ begin
     3: RcrRM8CL(ModRM);
     4: ShlRM8CL(ModRM);
     5: ShrRM8CL(ModRM);
-    6: SetMoRM8(ModRM);
+    6: SetMoRM8CL(ModRM);
     7: SarRM8CL(ModRM);
   end;
 end;
@@ -3449,7 +3451,7 @@ begin
     3: RcrRM16CL(ModRM);
     4: ShlRM16CL(ModRM);
     5: ShrRM16CL(ModRM);
-    6: SetMoRM16(ModRM);
+    6: SetMoRM16CL(ModRM);
     7: SarRM16CL(ModRM);
   end;
 end;
@@ -4649,16 +4651,32 @@ begin
   Registers.Flags.UpdateAfterInc16(AOp, Result);
 end;
 
-procedure TCpu8088.SetMoRM8(AModRM: TModRM);
+procedure TCpu8088.SetMoRM8Const1(AModRM: TModRM);
 begin
   ReadRM8(AModRM);
   WriteRM8(AModRM, $FF);
   Registers.Flags.UpdateAfterSetMo;
 end;
 
-procedure TCpu8088.SetMoRM16(AModRM: TModRM);
+procedure TCpu8088.SetMoRM16Const1(AModRM: TModRM);
 begin
   ReadRM16(AModRM);
+  WriteRM16(AModRM, $FFFF);
+  Registers.Flags.UpdateAfterSetMo;
+end;
+
+procedure TCpu8088.SetMoRM8CL(AModRM: TModRM);
+begin
+  ReadRM8(AModRM);
+  if Registers.CL = 0 then Exit;
+  WriteRM8(AModRM, $FF);
+  Registers.Flags.UpdateAfterSetMo;
+end;
+
+procedure TCpu8088.SetMoRM16CL(AModRM: TModRM);
+begin
+  ReadRM16(AModRM);
+  if Registers.CL = 0 then Exit;
   WriteRM16(AModRM, $FFFF);
   Registers.Flags.UpdateAfterSetMo;
 end;
