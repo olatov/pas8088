@@ -270,7 +270,7 @@ begin
     'ES', Registers.ES,
 
     'IP', Registers.IP,
-    'Flags', Registers.Flags.GetWord
+    'Flags', Registers.Flags.GetValue
   ]);
 
   SendJson(AResponse, Result);

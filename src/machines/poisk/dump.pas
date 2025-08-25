@@ -59,7 +59,7 @@ begin
     SS := ACpu.Registers.SS;
     ES := ACpu.Registers.ES;
     IP := ACpu.Registers.IP;
-    Flags := ACpu.Registers.Flags.GetWord or $F000;
+    Flags := ACpu.Registers.Flags.GetValue or $F000;
 
     for I := 0 to High(Code) do
     begin
