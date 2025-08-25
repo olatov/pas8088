@@ -32,6 +32,7 @@ type
   TVideoRows = 0..199;
   TScanLine = array[0..High(TVideoCols)] of TColor;
   TCGAPallette = array[0..3] of TColor;
+  TCGARegisters = array[0..$11] of Byte;
 
 const
   CGAColors: array[0..15] of TColor = (
@@ -95,10 +96,14 @@ type
       Unused: 0..%111111;
       VideoModeLoNibble: 0..%11;
     end;
+    FRegisters: TCGARegisters;
+    FSelectedRegister: Byte;
     function GetActiveMode: TVideoMode;
     function GetActivePallette: TCGAPallette;
     function GetBitsPerPixel: Byte;
     function GetSegment: Word;
+    procedure SetRegisters(AValue: TCGARegisters);
+    procedure SetSelectedRegister(AValue: Byte);
   private
     FIOBus: IIOBus;
     FMemoryBus: IMemoryBus;
@@ -115,6 +120,8 @@ type
     property ActiveMode: TVideoMode read GetActiveMode;
     property Segment: Word read GetSegment;
     property BitsPerPixel: Byte read GetBitsPerPixel;
+    property Registers: TCGARegisters read FRegisters write SetRegisters;
+    property SelectedRegister: Byte read FSelectedRegister write SetSelectedRegister;
   public
     property PoiskPalletteBug: Boolean read FPoiskPalletteBug write SetPoiskPalletteBug;
     property NmiTrigger: INmiTrigger read FNmiTrigger write FNmiTrigger;
@@ -156,6 +163,17 @@ begin
     vmText40, vmText80: Result := BaseSegment + (FPort68Register.DisplayBank shl 10);
     vmGraphics320, vmGraphics640: Result := BaseSegment;
   end;
+end;
+
+procedure TVideoController.SetRegisters(AValue: TCGARegisters);
+begin
+  FRegisters := AValue;
+end;
+
+procedure TVideoController.SetSelectedRegister(AValue: Byte);
+begin
+  if FSelectedRegister = AValue then Exit;
+  FSelectedRegister := AValue;
 end;
 
 function TVideoController.GetBitsPerPixel: Byte;
@@ -233,6 +251,8 @@ begin
   Addr := ((ANumber shr 1) * 80);
   if (Odd(ANumber)) then Inc(Addr, $2000);
 
+  Addr := (Addr + ((FRegisters[$0C] shl 8) or FRegisters[$0D]) shl 1) and $3FFF;
+
   Pallette := ActivePallette;
   Pallette[0] := BackgroundColor;
 
@@ -263,7 +283,7 @@ begin
           Inc(I, 7);
         end;
     else
-      for J := ((8 Div BitsPerPixel) - 1) downto 0 do
+      for J := ((8 div BitsPerPixel) - 1) downto 0 do
       begin
         ColorIndex := (Data shr (J * BitsPerPixel) and ColorMask);
         for K := 0 to BitsPerPixel - 1 do
@@ -436,7 +456,17 @@ begin
 
     $6A: Move(AData, FPort6ARegister, 1);
 
-    $3D4..$3D5, $3D8..$3D9:  ActivateTrap(Lo(AAddress) or $C000, AData);
+    $3D4..$3D5, $3D8..$3D9:
+      begin
+        case AAddress of
+          $3D4:
+            SelectedRegister := EnsureRange(
+              AData, Low(Registers), High(Registers));
+          $3D5: FRegisters[SelectedRegister] := AData;
+        else;
+        end;
+        ActivateTrap(Lo(AAddress) or $C000, AData);
+      end;
   end;
 end;
 
