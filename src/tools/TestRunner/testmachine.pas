@@ -235,9 +235,9 @@ function TTestMachine.VerifyTest(ATest: TTest; out AErrors: TStringArray;
     Result := AExpected = AActual;
   end;
 
-  function VerifyFlag(AFlag: TFlagRegister.TFlags; AExpectedFlags, AActualFlags: Word): Boolean;
+  function VerifyFlag(AFlag: Integer; AExpectedFlags, AActualFlags: Word): Boolean;
   begin
-    Result := AExpectedFlags.Bits[Ord(AFlag)] = AActualFlags.Bits[Ord(AFlag)];
+    Result := AExpectedFlags.Bits[AFlag] = AActualFlags.Bits[AFlag];
   end;
 
 var
@@ -247,6 +247,11 @@ var
   Check: Boolean;
   WrongFlags: TStringArray;
   Reg: String;
+
+const
+  FlagC = 0; FlagP = 2; FlagA = 4;
+  FlagZ = 6; FlagS = 7; FlagT = 8;
+  FlagI = 9; FlagD = 10; FlagO = 11;
 
 begin
   Result := True;
@@ -266,15 +271,16 @@ begin
       if Reg = 'flags' then
       begin
         WrongFlags := [];
-        if not VerifyFlag(TFlagRegister.TFlags.flagC, ExpectedWord, ActualWord) then Insert('CF', WrongFlags, Integer.MaxValue);
-        if not VerifyFlag(TFlagRegister.TFlags.flagP, ExpectedWord, ActualWord) then Insert('PF', WrongFlags, Integer.MaxValue);
-        if not VerifyFlag(TFlagRegister.TFlags.flagA, ExpectedWord, ActualWord) then Insert('AF', WrongFlags, Integer.MaxValue);
-        if not VerifyFlag(TFlagRegister.TFlags.flagZ, ExpectedWord, ActualWord) then Insert('ZF', WrongFlags, Integer.MaxValue);
-        if not VerifyFlag(TFlagRegister.TFlags.flagS, ExpectedWord, ActualWord) then Insert('SF', WrongFlags, Integer.MaxValue);
-        if not VerifyFlag(TFlagRegister.TFlags.flagT, ExpectedWord, ActualWord) then Insert('TF', WrongFlags, Integer.MaxValue);
-        if not VerifyFlag(TFlagRegister.TFlags.flagI, ExpectedWord, ActualWord) then Insert('IF', WrongFlags, Integer.MaxValue);
-        if not VerifyFlag(TFlagRegister.TFlags.flagD, ExpectedWord, ActualWord) then Insert('DF', WrongFlags, Integer.MaxValue);
-        if not VerifyFlag(TFlagRegister.TFlags.flagO, ExpectedWord, ActualWord) then Insert('OF', WrongFlags, Integer.MaxValue);
+
+        if not VerifyFlag(FlagC, ExpectedWord, ActualWord) then Insert('CF', WrongFlags, Integer.MaxValue);
+        if not VerifyFlag(FlagP, ExpectedWord, ActualWord) then Insert('PF', WrongFlags, Integer.MaxValue);
+        if not VerifyFlag(FlagA, ExpectedWord, ActualWord) then Insert('AF', WrongFlags, Integer.MaxValue);
+        if not VerifyFlag(FlagZ, ExpectedWord, ActualWord) then Insert('ZF', WrongFlags, Integer.MaxValue);
+        if not VerifyFlag(FlagS, ExpectedWord, ActualWord) then Insert('SF', WrongFlags, Integer.MaxValue);
+        if not VerifyFlag(FlagT, ExpectedWord, ActualWord) then Insert('TF', WrongFlags, Integer.MaxValue);
+        if not VerifyFlag(FlagI, ExpectedWord, ActualWord) then Insert('IF', WrongFlags, Integer.MaxValue);
+        if not VerifyFlag(FlagD, ExpectedWord, ActualWord) then Insert('DF', WrongFlags, Integer.MaxValue);
+        if not VerifyFlag(FlagO, ExpectedWord, ActualWord) then Insert('OF', WrongFlags, Integer.MaxValue);
         Insert(String.Join(', ', WrongFlags), AErrors, Integer.MaxValue);
       end;
 

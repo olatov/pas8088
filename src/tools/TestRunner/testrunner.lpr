@@ -39,19 +39,25 @@ end;
 function TApplication.BuildFlagMask(AFlags: String): Word;
 var
   Flag: Char;
+
+const
+  FlagC = 0; FlagP = 2; FlagA = 4;
+  FlagZ = 6; FlagS = 7; FlagT = 8;
+  FlagI = 9; FlagD = 10; FlagO = 11;
+
 begin
   Result := 0;
   for Flag in AFlags.ToLower.Trim do
     case Flag of
-      's': Result.SetBit(Ord(TFlagRegister.TFlags.flagS));
-      'z': Result.SetBit(Ord(TFlagRegister.TFlags.flagZ));
-      'p': Result.SetBit(Ord(TFlagRegister.TFlags.flagP));
-      'c': Result.SetBit(Ord(TFlagRegister.TFlags.flagC));
-      'o': Result.SetBit(Ord(TFlagRegister.TFlags.flagO));
-      'a': Result.SetBit(Ord(TFlagRegister.TFlags.flagA));
-      'd': Result.SetBit(Ord(TFlagRegister.TFlags.flagD));
-      'i': Result.SetBit(Ord(TFlagRegister.TFlags.flagI));
-      't': Result.SetBit(Ord(TFlagRegister.TFlags.flagT));
+      's': Result.SetBit(FlagS);
+      'z': Result.SetBit(FlagZ);
+      'p': Result.SetBit(FlagP);
+      'c': Result.SetBit(FlagC);
+      'o': Result.SetBit(FlagO);
+      'a': Result.SetBit(FlagA);
+      'd': Result.SetBit(FlagD);
+      'i': Result.SetBit(FlagI);
+      't': Result.SetBit(FlagT);
     else
       raise Exception.CreateFmt('Invalid flag: "%s"', [Flag]);
     end;
