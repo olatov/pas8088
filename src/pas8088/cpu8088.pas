@@ -34,11 +34,7 @@ type
 
   TFlagRegister = class(TComponent)
   private
-    type
-      TParityTable = array[0..$FF] of Boolean;
-  private
     FValue: Word;
-    FParityTable: TParityTable;
     function GetAF: Boolean;
     function GetCF: Boolean;
     function GetDF: Boolean;
@@ -48,7 +44,6 @@ type
     function GetSF: Boolean;
     function GetTF: Boolean;
     function GetZF: Boolean;
-    procedure InitParityTable;
     procedure SetAF(AValue: Boolean);
     procedure SetCF(AValue: Boolean);
     procedure SetDF(AValue: Boolean);
@@ -598,21 +593,6 @@ end;
 
 { TFlagRegister }
 
-procedure TFlagRegister.InitParityTable;
-var
-  I, J: Integer;
-  Value: Boolean;
-begin
-  for I := 0 To High(FParityTable) do
-  begin
-    Value := True;
-    for J := 0 to 7 do
-      if (I and (1 shl J)) <> 0 then
-        Value := not Value;
-    FParityTable[I] := Value;
-  end;
-end;
-
 function TFlagRegister.GetAF: Boolean;
 begin
   Result := FValue.Bits[Ord(flagA)];
@@ -706,7 +686,6 @@ end;
 constructor TFlagRegister.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
-  InitParityTable;
   Reset;
 end;
 
@@ -753,7 +732,7 @@ end;
 
 procedure TFlagRegister.UpdatePF8(AValue: Byte);
 begin
-  PF := FParityTable[AValue];
+  PF := not Odd(PopCnt(AValue));
 end;
 
 procedure TFlagRegister.UpdateZF8(AValue: Byte);
@@ -802,7 +781,7 @@ end;
 
 procedure TFlagRegister.UpdatePF16(AValue: Word);
 begin
-  PF := FParityTable[Lo(AValue)];
+  UpdatePF8(Lo(AValue));
 end;
 
 procedure TFlagRegister.UpdateZF16(AValue: Word);
