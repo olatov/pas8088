@@ -4766,11 +4766,13 @@ begin
 end;
 
 procedure TCpu8088.Tick;
+var
+  Trace: Boolean;
 begin
   Inc(FTicks);
   Dec(FWaitStates);
 
-  if (WaitStates > 0) then Exit;
+  if WaitStates > 0 then Exit;
 
   if FNmiPending then
   begin
@@ -4793,10 +4795,17 @@ begin
 
   if not FCurrentInstruction.Repeating then FetchInstruction;
 
+  Trace := Registers.Flags.TF;
   ExecuteCurrentInstruction;
 
   if Assigned(OnAfterInstruction) then
     OnAfterInstruction(Self, FCurrentInstruction);
+
+  if Trace then
+  begin
+    Registers.Flags.TF := False;
+    EnterISR(1);
+  end;
 end;
 
 procedure TCpu8088.FetchInstruction;
