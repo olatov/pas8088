@@ -200,7 +200,6 @@ type
         Segment: Word;
         EffectiveAddr: Word;
       end;
-    function CheckRepetition: Boolean;
     procedure DecRM16(AModRM: TModRM);
     procedure EnterISR(ANumber: Byte);
     procedure ExecuteCurrentInstruction;
@@ -771,7 +770,6 @@ procedure TFlagRegister.UpdateOFAdd16(AAOp, ABOp, ACarryIn: Word);
 var
   SignedResult: Integer;
 begin
-  { Todo }
   SignedResult := Int16(AAop) + Int16(ABop) + ACarryIn;
   OF_ := not InRange(SignedResult, Int16.MinValue, Int16.MaxValue);
 end;
@@ -833,8 +831,7 @@ begin
   UpdateZF8(AResult);
   UpdateSF8(AResult);
   UpdatePF8(AResult);
-
-  AF := False; { for debug }
+  AF := False;
 end;
 
 procedure TFlagRegister.UpdateAfterAnd16(AResult: Word);
@@ -844,8 +841,7 @@ begin
   UpdateZF16(AResult);
   UpdateSF16(AResult);
   UpdatePF16(AResult);
-
-  AF := False; { for debug }
+  AF := False;
 end;
 
 procedure TFlagRegister.UpdateAfterOr8(AResult: Byte);
@@ -855,8 +851,7 @@ begin
   UpdateZF8(AResult);
   UpdateSF8(AResult);
   UpdatePF8(AResult);
-
-  AF := False; { for debug }
+  AF := False;
 end;
 
 procedure TFlagRegister.UpdateAfterOr16(AResult: Word);
@@ -866,8 +861,7 @@ begin
   UpdateZF16(AResult);
   UpdateSF16(AResult);
   UpdatePF16(AResult);
-
-  AF := False; { for debug }
+  AF := False;
 end;
 
 procedure TFlagRegister.UpdateAfterNeg8(AOld, AResult: Byte);
@@ -897,8 +891,7 @@ begin
   UpdateZF8(AResult);
   UpdateSF8(AResult);
   UpdatePF8(AResult);
-
-  AF := False; { for debug }
+  AF := False;
 end;
 
 procedure TFlagRegister.UpdateAfterXor16(AResult: Word);
@@ -908,8 +901,7 @@ begin
   UpdateZF16(AResult);
   UpdateSF16(AResult);
   UpdatePF16(AResult);
-
-  AF := False; { for debug }
+  AF := False;
 end;
 
 procedure TFlagRegister.UpdateAfterDec8(AOld: Byte; AResult: Int16);
@@ -1045,18 +1037,16 @@ begin
   CF := Hi(AResult) <> 0;
   OF_ := CF;
 
-  SF := Int32(AResult) < 0; { for debug }
+  SF := AResult.Bits[31];
   UpdatePF16(Hi(AResult));
   UpdateZF16(Hi(AResult));
-  AF := False; { for debug }
+  AF := False;
 end;
 
 procedure TFlagRegister.UpdateAfterImul8(AResult: Int16);
 begin
   CF := AResult <> Int8(Lo(AResult));
   OF_ := CF;
-
-  { Todo: undefined flags logic }
 end;
 
 procedure TFlagRegister.UpdateAfterImul16(AResult: Int32);
@@ -1372,15 +1362,7 @@ end;
 procedure TCpu8088.ExecuteCurrentInstruction;
 begin
   if Assigned(FOnBeforeExecution) then
-    FOnBeforeExecution(Self, FCurrentInstruction);;
-  {
-    case FCurrentInstruction.Repeating of
-      True: if CheckRepetition then
-        FOnBeforeExecution(Self, FCurrentInstruction);
-    else
-      FOnBeforeExecution(Self, FCurrentInstruction);;
-    end;
-  }
+    FOnBeforeExecution(Self, FCurrentInstruction);
 
   if FCurrentInstruction.Repeating and (Registers.CX = 0) then
   begin
@@ -3443,7 +3425,6 @@ begin
   Registers.Flags.UpdatePF8(Registers.AL);
   Registers.Flags.UpdateZF8(Registers.AL);
 
-  { Todo: undefined but need to figure out real 8088 behavior }
   Registers.Flags.UpdateCFAdd8(Result);
   Registers.Flags.UpdateOFAdd8(AOp, BOp, 0);
   Registers.Flags.UpdateAFAdd8(AOp, BOp, 0, Result);
@@ -3657,7 +3638,7 @@ var
   Result: Int32;
 begin
   AOp := ReadRM16(AModRM);
-  Result := AOp + AImm; { Todo: check if negative? }
+  Result := AOp + AImm;
   WriteRM16(AModRM, Result);
   Registers.Flags.UpdateAfterAdd16(AOp, AImm, 0, Result);
 end;
@@ -4088,32 +4069,30 @@ end;
 
 procedure TCpu8088.SarRM8Const1(AModRM: TModRM);
 var
-  OrigSign, Value: Byte;
+  AOp: Byte;
   LastShiftedOut: Boolean;
 begin
-  Value := ReadRM8(AModRM);
-  OrigSign := Value and $80;
+  AOp := ReadRM8(AModRM);
 
-  LastShiftedOut := Value.Bits[0];
-  Value := (Value shr 1) or OrigSign;
+  LastShiftedOut := AOp.Bits[0];
+  AOp := SarShortint(AOp);
 
-  WriteRM8(AModRM, Value);
-  Registers.Flags.UpdateAfterSar8(Value, LastShiftedOut);
+  WriteRM8(AModRM, AOp);
+  Registers.Flags.UpdateAfterSar8(AOp, LastShiftedOut);
 end;
 
 procedure TCpu8088.SarRM16Const1(AModRM: TModRM);
 var
-  OrigSign, Value: Word;
+  AOp: Word;
   LastShiftedOut: Boolean;
 begin
-  Value := ReadRM16(AModRM);
-  OrigSign := Value and $8000;
+  AOp := ReadRM16(AModRM);
 
-  LastShiftedOut := Value.Bits[0];
-  Value := (Value shr 1) or OrigSign;
+  LastShiftedOut := AOp.Bits[0];
+  AOp := SarSmallint(AOp);
 
-  WriteRM16(AModRM, Value);
-  Registers.Flags.UpdateAfterSar16(Value, LastShiftedOut);
+  WriteRM16(AModRM, AOp);
+  Registers.Flags.UpdateAfterSar16(AOp, LastShiftedOut);
 end;
 
 procedure TCpu8088.RorRM8Const1(AModRM: TModRM);
@@ -4124,8 +4103,7 @@ begin
   AOp := ReadRM8(AModRM);
 
   Shifted := AOp.Bits[0];
-  Result := AOp shr 1;
-  Result.Bits[7] := Shifted;
+  Result := RorByte(AOp);
 
   WriteRM8(AModRM, Result);
   Registers.Flags.UpdateAfterRor8(Shifted, Result);
@@ -4139,8 +4117,7 @@ begin
   AOp := ReadRM16(AModRM);
 
   Shifted := AOp.Bits[0];
-  Result := AOp shr 1;
-  Result.Bits[15] := Shifted;
+  Result := RorWord(AOp);
 
   WriteRM16(AModRM, Result);
   Registers.Flags.UpdateAfterRor16(Shifted, Result);
@@ -4157,8 +4134,7 @@ begin
   for I := 1 to Registers.CL do
   begin
     LastShifted := Result.Bits[0];
-    Result := Result shr 1;
-    Result.Bits[7] := LastShifted;
+    Result := RorByte(Result);
   end;
   WriteRM8(AModRM, Result);
   Registers.Flags.UpdateAfterRor8(LastShifted, Result);
@@ -4175,8 +4151,7 @@ begin
   for I := 1 to Registers.CL do
   begin
     LastShifted := Result.Bits[0];
-    Result := Result shr 1;
-    Result.Bits[15] := LastShifted;
+    Result := RorWord(Result);
   end;
   WriteRM16(AModRM, Result);
   Registers.Flags.UpdateAfterRor16(LastShifted, Result);
@@ -4190,8 +4165,7 @@ begin
   AOp := ReadRM8(AModRM);
 
   Shifted := AOp.Bits[7];
-  Result := AOp shl 1;
-  Result.Bits[0] := Shifted;
+  Result := RolByte(AOp);
 
   WriteRM8(AModRM, Result);
   Registers.Flags.UpdateAfterRol8(1, Shifted, Result);
@@ -4205,8 +4179,7 @@ begin
   AOp := ReadRM16(AModRM);
 
   Shifted := AOp.Bits[15];
-  Result := AOp shl 1;
-  Result.Bits[0] := Shifted;
+  Result := RolWord(AOp);
 
   WriteRM16(AModRM, Result);
   Registers.Flags.UpdateAfterRol16(1, Shifted, Result);
@@ -4223,8 +4196,7 @@ begin
   for I := 1 to Registers.CL do
   begin
     LastShifted := Result.Bits[7];
-    Result := Result shl 1;
-    Result.Bits[0] := LastShifted;
+    Result := RolByte(Result);
   end;
 
   WriteRM8(AModRM, Result);
@@ -4242,8 +4214,7 @@ begin
   for I := 1 to Registers.CL do
   begin
     LastShifted := Result.Bits[15];
-    Result := Result shl 1;
-    Result.Bits[0] := LastShifted;
+    Result := RolWord(Result);
   end;
 
   WriteRM16(AModRM, Result);
@@ -4624,18 +4595,6 @@ begin
   if Registers.CL = 0 then Exit;
   WriteRM16(AModRM, $FFFF);
   Registers.Flags.UpdateAfterSetMo;
-end;
-
-function TCpu8088.CheckRepetition: Boolean; { for debug }
-begin
-  Result := FCurrentInstruction.Repeating;
-  if Registers.CX = 0 then Exit(False);
-
-  case FCurrentInstruction.Repetition of
-    repRepE: Result := Registers.Flags.ZF;
-    repRepNE: Result := not Registers.Flags.ZF;
-  else;
-  end;
 end;
 
 procedure TCpu8088.HandleRepetition;
