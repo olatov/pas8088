@@ -1512,7 +1512,15 @@ var
   Data: Byte absolute Result;
 begin
   Data := FetchCodeByte;
-  if Result.Mod_ <> modRegister then FillEffectiveAddress(Result);
+  if Result.Mod_ <> modRegister then
+    FillEffectiveAddress(Result)
+  else
+  begin
+    { No memory operand. Undefined register forms (LEA, LES, LDS, far
+      CALL/JMP) still read these fields, so keep them deterministic. }
+    Result.Segment := 0;
+    Result.EffectiveAddr := 0;
+  end;
 end;
 
 function TCpu8088.ReadRM8(AModRM: TModRM): Byte;
@@ -3639,7 +3647,26 @@ end;
 procedure TCpu8088.HandleGRP5;
 var
   ModRM: TModRM;
-  Value: Word;
+
+  { Far pointer operand: offset at EA, segment at EA + 2. }
+  procedure ReadFarPointer(out ASegment, AOffset: Word);
+  begin
+    if ModRM.Mod_ = modRegister then
+    begin
+      { Register forms leak uninitialized microcode state on real hardware
+        (there is no memory operand to read a far pointer from); use the
+        register for both halves so the result is at least deterministic. }
+      AOffset := ReadRM16(ModRM);
+      ASegment := AOffset;
+      Exit;
+    end;
+
+    AOffset := ReadMemoryWord(ModRM.Segment, ModRM.EffectiveAddr);
+    ASegment := ReadMemoryWord(ModRM.Segment, ModRM.EffectiveAddr + 2);
+  end;
+
+var
+  Value, Segment, Offset: Word;
 begin
   ModRM := FetchModRM;
 
@@ -3647,13 +3674,17 @@ begin
     0: IncRM16(ModRM);
     1: DecRM16(ModRM);
     2: CallNearAbsolute(ReadRM16(ModRM));
-    3: CallFar(
-         ReadMemoryWord(ModRM.Segment, ModRM.EffectiveAddr + 2),
-         ReadMemoryWord(ModRM.Segment, ModRM.EffectiveAddr));
+    3:
+      begin
+        ReadFarPointer(Segment, Offset);
+        CallFar(Segment, Offset);
+      end;
     4: JumpNearAbsolute(ReadRM16(ModRM));
-    5: JumpFar(
-         ReadMemoryWord(ModRM.Segment, ModRM.EffectiveAddr + 2),
-         ReadMemoryWord(ModRM.Segment, ModRM.EffectiveAddr));
+    5:
+      begin
+        ReadFarPointer(Segment, Offset);
+        JumpFar(Segment, Offset);
+      end;
     6, 7:
       { Note: Ext 7 is undefined, yet it's same as Ext 6. }
       begin
