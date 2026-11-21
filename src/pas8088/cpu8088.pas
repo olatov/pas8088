@@ -4845,9 +4845,8 @@ var
   Trace: Boolean;
 begin
   Inc(FTicks);
-  Dec(FWaitStates);
-
-  if WaitStates > 0 then Exit;
+  if FWaitStates > 0 then Dec(FWaitStates);
+  if FWaitStates > 0 then Exit;
 
   if not FInterruptShadow then
   begin
