@@ -4674,9 +4674,12 @@ var
   Trace: Boolean;
 begin
   Inc(FTicks);
-  Dec(FWaitStates);
 
-  if WaitStates > 0 then Exit;
+  if WaitStates > 0 then
+  begin
+    Dec(FWaitStates);
+    Exit;
+  end;
 
   if FNmiPending then
   begin
