@@ -3556,16 +3556,83 @@ begin
 end;
 
 procedure TCpu8088.HandleGRP4;
+{ Extensions 2..7 are undocumented: the microcode runs the FF group
+  routines with W=0, so operand reads and stack writes are byte-sized. }
 var
   ModRM: TModRM;
+
+  { A byte operand widened to a word as the CPU does it. For memory the
+    high byte is $FF; for a register it is the other half of the same
+    16-bit register (AL -> AX, AH -> AX byte-swapped). }
+  function ReadOperand: Word;
+  begin
+    if ModRM.Mod_ = modRegister then
+    begin
+      Result := Registers.GetByIndex16(Registers.TRegIndex16(ModRM.Rm and 3));
+      if ModRM.Rm >= 4 then Result := Swap(Result);
+    end
+    else
+      Result := $FF00 or ReadMemoryByte(ModRM.Segment, ModRM.EffectiveAddr);
+  end;
+
+  { The far forms read the segment from the same offset as the IP (not
+    EA + 2), and that read ignores any segment override. }
+  function ReadFarSegment: Word;
+  var
+    Segment: Word;
+  begin
+    { Register forms leak uninitialized microcode state on real hardware;
+      reuse the offset operand so the result is at least deterministic. }
+    if ModRM.Mod_ = modRegister then Exit(ReadOperand);
+
+    if (ModRM.Rm in [%010, %011]) or
+      ((ModRM.Rm = %110) and (ModRM.Mod_ <> modMemNoDisp)) then
+      Segment := Registers.SS
+    else
+      Segment := Registers.DS;
+
+    Result := $FF00 or ReadMemoryByte(Segment, ModRM.EffectiveAddr);
+  end;
+
+  { SP moves by a full word, but only the low byte is written. }
+  procedure PushByte(AValue: Byte);
+  begin
+    Registers.SP := Registers.SP - 2;
+    WriteMemoryByte(Registers.SS, Registers.SP, AValue);
+  end;
+
+var
+  Offset, Segment: Word;
 begin
   ModRM := FetchModRM;
 
   case ModRM.Reg of
     0: IncRM8(ModRM);
     1: DecRM8(ModRM);
-  else
-    raise Exception.CreateFmt('Invalid GRP4 extension: %d', [ModRM.Reg]);
+    2: { CALL near r/m8 }
+      begin
+        Offset := ReadOperand;
+        PushByte(Lo(Registers.IP));
+        Registers.IP := Offset;
+      end;
+    3: { CALL far m8:8 }
+      begin
+        Offset := ReadOperand;
+        Segment := ReadFarSegment;
+        PushByte(Lo(Registers.CS));
+        PushByte(Lo(Registers.IP));
+        JumpFar(Segment, Offset);
+      end;
+    4: { JMP near r/m8 }
+      JumpNearAbsolute(ReadOperand);
+    5: { JMP far m8:8 }
+      begin
+        Offset := ReadOperand;
+        Segment := ReadFarSegment;
+        JumpFar(Segment, Offset);
+      end;
+    6, 7: { PUSH r/m8; ext 7 aliases ext 6 }
+      PushByte(ReadRM8(ModRM));
   end;
 end;
 
