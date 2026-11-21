@@ -7,7 +7,7 @@ uses
   cthreads,
   {$ENDIF}
   Classes, SysUtils, CustApp, FPJson, JsonParser, ZStream, PTCCrt,
-  Cpu8088, TestMachine;
+  Cpu8088, TestMachine, Benchmark;
 
 type
 
@@ -69,7 +69,7 @@ var
   TestFile: String;
 begin
   // quick check parameters
-  ErrorMsg := CheckOptions('f:h', ['flags:', 'help']);
+  ErrorMsg := CheckOptions('f:hb::', ['flags:', 'help', 'bench::']);
   if ErrorMsg <> '' then
   begin
     ShowException(Exception.Create(ErrorMsg));
@@ -85,12 +85,22 @@ begin
     Exit;
   end;
 
+  if HasOption('b', 'bench') then
+  begin
+    if GetOptionValue('b', 'bench') <> '' then
+      RunBenchmark(StrToQWord(GetOptionValue('b', 'bench')))
+    else
+      RunBenchmark(50000000);
+    Terminate;
+    Exit;
+  end;
+
   if HasOption('f', 'flags') then
     FlagMask := BuildFlagMask(GetOptionValue('f', 'flags'))
   else
     FlagMask := $FFFF;
 
-  for TestFile in GetNonOptions('f:h', ['flags:', 'help']) do
+  for TestFile in GetNonOptions('f:hb::', ['flags:', 'help', 'bench::']) do
     RunTestFile(TestFile);
 
   // stop program loop
@@ -111,7 +121,8 @@ end;
 procedure TApplication.WriteHelp;
 begin
   { add your help code here }
-  writeln('Usage: ', ExeName, ' -h');
+  writeln('Usage: ', ExeName, ' [-f FLAGS] TESTFILE.json.gz ...');
+  writeln('       ', ExeName, ' --bench[=TICKS]   (default 50000000 ticks)');
 end;
 
 procedure TApplication.RunTestFile(AFileName: String);

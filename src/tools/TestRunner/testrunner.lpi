@@ -65,6 +65,11 @@
         <IsPartOfProject Value="True"/>
         <UnitName Value="TestMachine"/>
       </Unit>
+      <Unit>
+        <Filename Value="benchmark.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Benchmark"/>
+      </Unit>
     </Units>
   </ProjectOptions>
   <CompilerOptions>

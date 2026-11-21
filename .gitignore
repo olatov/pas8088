@@ -18,4 +18,4 @@ backup/
 *.exe
 *.res
 *.com
-
+src/tools/TestRunner/testrunner
