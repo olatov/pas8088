@@ -4705,11 +4705,7 @@ begin
   if Assigned(OnAfterInstruction) then
     OnAfterInstruction(Self, FCurrentInstruction);
 
-  if Trace then
-  begin
-    Registers.Flags.TF := False;
-    EnterISR(1);
-  end;
+  if Trace then EnterISR(1);
 end;
 
 procedure TCpu8088.FetchInstruction;
