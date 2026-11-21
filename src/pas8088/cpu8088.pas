@@ -269,7 +269,7 @@ type
     procedure HandleOrRM8Reg8;  { $08 }
     procedure HandleOrRM16Reg16;  { $09 }
     procedure HandleOrReg8RM8;  { $0A }
-    procedure HandleOrReg16RM16;  { $0A }
+    procedure HandleOrReg16RM16;  { $0B }
     procedure HandleOrALImm8;  { $0C }
     procedure HandleOrAXImm16;  { $0D }
     procedure HandlePushCS;  { $0E }
@@ -333,7 +333,7 @@ type
     procedure HandleJbShort;  { $72 }
     procedure HandleJaeShort;  { $73 }
     procedure HandleJeShort;  { $74 }
-    procedure HandleJneShort;  { $74 }
+    procedure HandleJneShort;  { $75 }
     procedure HandleJbeShort;  { $76 }
     procedure HandleJaShort;  { $77 }
     procedure HandleJsShort;  { $78 }
@@ -414,8 +414,8 @@ type
     procedure HandleSalc;  { $D6 }
     procedure HandleXlat;  { $D7 }
 
-    procedure HandleLoope;  { $E0 }
-    procedure HandleLoopne;  { $E1 }
+    procedure HandleLoopne;  { $E0 }
+    procedure HandleLoope;  { $E1 }
     procedure HandleLoop;  { $E2 }
     procedure HandleJcxz;  { $E3 }
     procedure HandleInALImm8;  { $E4 }
@@ -1272,25 +1272,25 @@ begin
 
   Builder
     .Append('AX [%.4x %6d %6d] :: ', [AX, AX, Int16(AX)])
-    .Append('AH [%.2x %6d %6d] :: ', [AH, AH, Int8(AL)])
+    .Append('AH [%.2x %6d %6d] :: ', [AH, AH, Int8(AH)])
     .Append('AL [%.2x %6d %6d] ', [AL, AL, Int8(AL)])
     .Append(LineEnding);
 
   Builder
     .Append('BX [%.4x %6d %6d] :: ', [BX, BX, Int16(BX)])
-    .Append('BH [%.2x %6d %6d] :: ', [BH, BH, Int8(BL)])
+    .Append('BH [%.2x %6d %6d] :: ', [BH, BH, Int8(BH)])
     .Append('BL [%.2x %6d %6d] ', [BL, BL, Int8(BL)])
     .Append(LineEnding);
 
   Builder
     .Append('CX [%.4x %6d %6d] :: ', [CX, CX, Int16(CX)])
-    .Append('CH [%.2x %6d %6d] :: ', [CH, CH, Int8(CL)])
+    .Append('CH [%.2x %6d %6d] :: ', [CH, CH, Int8(CH)])
     .Append('CL [%.2x %6d %6d] ', [CL, CL, Int8(CL)])
     .Append(LineEnding);
   
   Builder
     .Append('DX [%.4x %6d %6d] :: ', [DX, DX, Int16(DX)])
-    .Append('DH [%.2x %6d %6d] :: ', [DH, DH, Int8(DL)])
+    .Append('DH [%.2x %6d %6d] :: ', [DH, DH, Int8(DH)])
     .Append('DL [%.2x %6d %6d] ', [DL, DL, Int8(DL)])
     .Append(LineEnding);
 
@@ -1559,8 +1559,7 @@ begin
     modRegister:
       Registers.SetByIndex16(Registers.TRegIndex16(AModRM.Rm), AValue);
   else
-    WriteMemoryByte(AModRM.Segment, AModRM.EffectiveAddr, Lo(AValue));
-    WriteMemoryByte(AModRM.Segment, AModRM.EffectiveAddr + 1, Hi(AValue));
+    WriteMemoryWord(AModRM.Segment, AModRM.EffectiveAddr, AValue);
   end;
 end;
 
@@ -1652,7 +1651,7 @@ end;
 
 function TCpu8088.ReadMemoryByte(AAddress: TPhysicalAddress): Byte;
 begin
-  if not Assigned(MemoryBus) then Exit;
+  if not Assigned(MemoryBus) then Exit($FF);
   MemoryBus.InvokeRead(Self, AAddress, Result);
 end;
 
@@ -1666,7 +1665,7 @@ end;
 procedure TCpu8088.OnMemoryWrite(Sender: IMemoryBusDevice;
   AAddress: TPhysicalAddress; AData: Byte);
 begin
-  { Nothin writes to the CPU }
+  { Nothing writes to the CPU }
 end;
 
 function TCpu8088.ReadMemoryByte(ASegment, AOffset: Word): Byte;
@@ -2053,7 +2052,7 @@ var
   Result: Byte;
 begin
   ModRM := FetchModRM;
-  Result := ReadRM8(ModRM) or Registers.GetByIndex8(ModRM.Reg);;
+  Result := ReadRM8(ModRM) or Registers.GetByIndex8(ModRM.Reg);
   WriteRM8(ModRM, Result);
   Registers.Flags.UpdateAfterOr8(Result);
 end;
@@ -2064,7 +2063,7 @@ var
   Result: Word;
 begin
   ModRM := FetchModRM;
-  Result := ReadRM16(ModRM) or Registers.GetByIndex16(ModRM.Reg);;
+  Result := ReadRM16(ModRM) or Registers.GetByIndex16(ModRM.Reg);
   WriteRM16(ModRM, Result);
   Registers.Flags.UpdateAfterOr16(Result);
 end;
@@ -3059,12 +3058,9 @@ end;
 
 procedure TCpu8088.HandleMovsw;
 begin
-  WriteMemoryByte(
+  WriteMemoryWord(
     Registers.ES, Registers.DI,
-    ReadMemoryByte(DataSegment, Registers.SI));
-  WriteMemoryByte(
-    Registers.ES, Registers.DI + 1,
-    ReadMemoryByte(DataSegment, Registers.SI + 1));
+    ReadMemoryWord(DataSegment, Registers.SI));
   Registers.SI := Registers.SI + DFDelta(SizeOf(Word));
   Registers.DI := Registers.DI + DFDelta(SizeOf(Word));
 end;
@@ -4716,21 +4712,19 @@ var
   I: Integer;
   Buf: String = '';
 begin
-  WriteStr(Result,
-    Format('%.4x:%.4x | ',
-    [FCurrentInstruction.CS, FCurrentInstruction.IP]));
+  Result := Format('%.4x:%.4x | ',
+    [FCurrentInstruction.CS, FCurrentInstruction.IP]);
 
   for I := 0 to FCurrentInstruction.Length - 1 do
     Buf := Buf + IntToHex(FCurrentInstruction.Code[I], 2);
 
-  WriteStr(Result,
-    Format(
+  Result := Result + Format(
       '%-10s | AX:%.4x | BX:%.4x | CX:%.4x | DX:%.4x | ' +
       'SI:%.4x | DI:%.4x | DS:%.4x | ES:%.4x | SS:%.4x',
       [
         Buf, Registers.AX, Registers.BX, Registers.CX, Registers.DX,
         Registers.SI, Registers.DI, Registers.DS, Registers.ES, Registers.SS
-      ]));
+      ]);
 end;
 
 constructor TCpu8088.Create(AOwner: TComponent);
