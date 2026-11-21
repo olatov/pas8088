@@ -206,9 +206,9 @@ type
     function Pop(ASegment: Word): Word;
     procedure Push(AValue: Word; ASegment: Word);
     procedure RaiseSoftwareInterrupt(ANumber: Byte);
-    function ReadMemoryByte(ASegment, AOffset: Word): Byte;
+    function ReadMemoryByte(ASegment, AOffset: Word): Byte; inline;
     procedure WriteMemoryWord(ASegment, AOffset: Word; AData: Word);
-    procedure WriteMemoryByte(ASegment, AOffset: Word; AData: Byte);
+    procedure WriteMemoryByte(ASegment, AOffset: Word; AData: Byte); inline;
     function DFDelta(Size: Integer): Integer;
   private
     FHalted: Boolean;
@@ -243,7 +243,7 @@ type
     function ExtraSegment: Word;
 
     function ReadMemoryWord(ASegment, AOffset: Word): Word;
-    function FetchCodeByte: Byte;
+    function FetchCodeByte: Byte; inline;
     function FetchCodeWord: Word;
     function FetchModRM: TModRM;
 
@@ -565,16 +565,82 @@ type
     { Memory bus device API }
     function GetMemoryBus: IMemoryBus;
     procedure SetMemoryBus(AValue: IMemoryBus);
-    procedure WriteMemoryByte(AAddress: TPhysicalAddress; AData: Byte);
-    function ReadMemoryByte(AAddress: TPhysicalAddress): Byte;
+    procedure WriteMemoryByte(AAddress: TPhysicalAddress; AData: Byte); inline;
+    function ReadMemoryByte(AAddress: TPhysicalAddress): Byte; inline;
     property MemoryBus: IMemoryBus read GetMemoryBus write SetMemoryBus;
     function OnMemoryRead(Sender: IMemoryBusDevice; AAddress: TPhysicalAddress; out AData: Byte): Boolean;
     procedure OnMemoryWrite(Sender: IMemoryBusDevice; AAddress: TPhysicalAddress; AData: Byte);
   end;
 
-  function GetPhysicalAddress(ASegment, AOffset: Word): TPhysicalAddress;
+  function GetPhysicalAddress(ASegment, AOffset: Word): TPhysicalAddress; inline;
 
 implementation
+
+type
+  { Stand-ins used while no bus is attached, so the memory and IO paths
+    don't need a nil check on every access. Reads float high ($FF), writes
+    are dropped. }
+
+  TUnattachedMemoryBus = class(TObject, IMemoryBus)
+    procedure AttachDevice(ADevice: IMemoryBusDevice);
+    procedure InvokeWrite(ADevice: IMemoryBusDevice; AAddress: TPhysicalAddress; AData: Byte);
+    procedure InvokeRead(ADevice: IMemoryBusDevice; AAddress: TPhysicalAddress; out AData: Byte);
+  end;
+
+  TUnattachedIOBus = class(TObject, IIOBus)
+    procedure AttachDevice(ADevice: IIOBusDevice);
+    procedure InvokeWrite(ADevice: IIOBusDevice; AAddress: Word; AData: Byte);
+    procedure InvokeRead(ADevice: IIOBusDevice; AAddress: Word; out AData: Byte);
+  end;
+
+var
+  UnattachedMemoryBus: TUnattachedMemoryBus;
+  UnattachedIOBus: TUnattachedIOBus;
+
+  { True when the byte has an even number of set bits (PF semantics) }
+  ParityTable: array[Byte] of Boolean;
+
+procedure InitParityTable;
+var
+  I: Integer;
+begin
+  for I := Low(ParityTable) to High(ParityTable) do
+    ParityTable[I] := not Odd(PopCnt(Byte(I)));
+end;
+
+{ TUnattachedMemoryBus }
+
+procedure TUnattachedMemoryBus.AttachDevice(ADevice: IMemoryBusDevice);
+begin
+end;
+
+procedure TUnattachedMemoryBus.InvokeWrite(ADevice: IMemoryBusDevice;
+  AAddress: TPhysicalAddress; AData: Byte);
+begin
+end;
+
+procedure TUnattachedMemoryBus.InvokeRead(ADevice: IMemoryBusDevice;
+  AAddress: TPhysicalAddress; out AData: Byte);
+begin
+  AData := $FF;
+end;
+
+{ TUnattachedIOBus }
+
+procedure TUnattachedIOBus.AttachDevice(ADevice: IIOBusDevice);
+begin
+end;
+
+procedure TUnattachedIOBus.InvokeWrite(ADevice: IIOBusDevice; AAddress: Word;
+  AData: Byte);
+begin
+end;
+
+procedure TUnattachedIOBus.InvokeRead(ADevice: IIOBusDevice; AAddress: Word;
+  out AData: Byte);
+begin
+  AData := $FF;
+end;
 
 function GetPhysicalAddress(ASegment, AOffset: Word): TPhysicalAddress;
 begin
@@ -702,7 +768,7 @@ end;
 
 procedure TFlagRegister.UpdatePF8(AValue: Byte);
 begin
-  PF := not Odd(PopCnt(AValue));
+  PF := ParityTable[AValue];
 end;
 
 procedure TFlagRegister.UpdateZF8(AValue: Byte);
@@ -1361,6 +1427,61 @@ end;
 
 { TCpu8088 }
 
+{ Memory access. Kept ahead of every caller: FPC only inlines a routine
+  whose body it has already compiled. }
+
+procedure TCpu8088.WriteMemoryByte(AAddress: TPhysicalAddress; AData: Byte);
+begin
+  FMemoryBus.InvokeWrite(Self, AAddress, AData);
+end;
+
+function TCpu8088.ReadMemoryByte(AAddress: TPhysicalAddress): Byte;
+begin
+  FMemoryBus.InvokeRead(Self, AAddress, Result);
+end;
+
+function TCpu8088.ReadMemoryByte(ASegment, AOffset: Word): Byte;
+begin
+  Result := ReadMemoryByte(GetPhysicalAddress(ASegment, AOffset));
+end;
+
+function TCpu8088.ReadMemoryWord(ASegment, AOffset: Word): Word;
+begin
+  Result := ReadMemoryByte(ASegment, AOffset);
+  Result := Result or (ReadMemoryByte(ASegment, Word(AOffset + 1)) shl 8);
+end;
+
+procedure TCpu8088.WriteMemoryByte(ASegment, AOffset: Word; AData: Byte);
+begin
+  WriteMemoryByte(GetPhysicalAddress(ASegment, AOffset), AData);
+end;
+
+procedure TCpu8088.WriteMemoryWord(ASegment, AOffset: Word; AData: Word);
+begin
+  WriteMemoryByte(GetPhysicalAddress(ASegment, AOffset), Lo(AData));
+  WriteMemoryByte(GetPhysicalAddress(ASegment, Word(AOffset + 1)), Hi(AData));
+end;
+
+function TCpu8088.FetchCodeByte: Byte;
+begin
+  Result := ReadMemoryByte(Registers.CS, Registers.IP);
+  Registers.IP := Registers.IP + 1;
+
+  if FCurrentInstruction.Length < Length(FCurrentInstruction.Code) then
+  begin
+    FCurrentInstruction.Code[FCurrentInstruction.Length] := Result;
+    Inc(FCurrentInstruction.Length);
+  end;
+end;
+
+function TCpu8088.FetchCodeWord: Word;
+begin
+  Result := FetchCodeByte;
+  Result := Result or (FetchCodeByte shl 8);
+end;
+
+{ Execution }
+
 procedure TCpu8088.ExecuteCurrentInstruction;
 begin
   if Assigned(FOnBeforeExecution) then
@@ -1491,24 +1612,6 @@ begin
   EnterISR(ANumber);
 end;
 
-function TCpu8088.FetchCodeByte: Byte;
-begin
-  Result := ReadMemoryByte(Registers.CS, Registers.IP);
-  Registers.IP := Registers.IP + 1;
-
-  if FCurrentInstruction.Length < Length(FCurrentInstruction.Code) then
-  begin
-    FCurrentInstruction.Code[FCurrentInstruction.Length] := Result;
-    Inc(FCurrentInstruction.Length);
-  end;
-end;
-
-function TCpu8088.FetchCodeWord: Word;
-begin
-  Result := FetchCodeByte;
-  Result := Result or (FetchCodeByte shl 8);
-end;
-
 function TCpu8088.FetchModRM: TModRM;
 var
   Data: Byte absolute Result;
@@ -1608,18 +1711,18 @@ end;
 
 procedure TCpu8088.SetIOBus(AValue: IIOBus);
 begin
-  if FIOBus = AValue then Exit;
+  if not Assigned(AValue) then AValue := UnattachedIOBus;
   FIOBus := AValue;
 end;
 
 procedure TCpu8088.WriteIOByte(AAddress: Word; AData: Byte);
 begin
-  IOBus.InvokeWrite(Self, AAddress, AData);
+  FIOBus.InvokeWrite(Self, AAddress, AData);
 end;
 
 function TCpu8088.ReadIOByte(AAddress: Word): Byte;
 begin
-  IOBus.InvokeRead(Self, AAddress, Result);
+  FIOBus.InvokeRead(Self, AAddress, Result);
 end;
 
 function TCpu8088.OnIORead(
@@ -1636,25 +1739,14 @@ end;
 
 function TCpu8088.GetMemoryBus: IMemoryBus;
 begin
+  if FMemoryBus = IMemoryBus(UnattachedMemoryBus) then Exit(nil);
   Result := FMemoryBus;
 end;
 
 procedure TCpu8088.SetMemoryBus(AValue: IMemoryBus);
 begin
-  if FMemoryBus = AValue then Exit;
+  if not Assigned(AValue) then AValue := UnattachedMemoryBus;
   FMemoryBus := AValue;
-end;
-
-procedure TCpu8088.WriteMemoryByte(AAddress: TPhysicalAddress; AData: Byte);
-begin
-  if not Assigned(MemoryBus) then Exit;
-  MemoryBus.InvokeWrite(Self, AAddress, AData);
-end;
-
-function TCpu8088.ReadMemoryByte(AAddress: TPhysicalAddress): Byte;
-begin
-  if not Assigned(MemoryBus) then Exit($FF);
-  MemoryBus.InvokeRead(Self, AAddress, Result);
 end;
 
 function TCpu8088.OnMemoryRead(Sender: IMemoryBusDevice;
@@ -1670,33 +1762,11 @@ begin
   { Nothing writes to the CPU }
 end;
 
-function TCpu8088.ReadMemoryByte(ASegment, AOffset: Word): Byte;
-begin
-  Result := ReadMemoryByte(GetPhysicalAddress(ASegment, AOffset));
-end;
-
-function TCpu8088.ReadMemoryWord(ASegment, AOffset: Word): Word;
-begin
-  Result := ReadMemoryByte(ASegment, AOffset);
-  Result := Result or (ReadMemoryByte(ASegment, Word(AOffset + 1)) shl 8);
-end;
-
-procedure TCpu8088.WriteMemoryByte(ASegment, AOffset: Word; AData: Byte);
-begin
-  WriteMemoryByte(GetPhysicalAddress(ASegment, AOffset), AData);
-end;
-
 function TCpu8088.DFDelta(Size: Integer): Integer;
 const
   Delta: array[1..2] of array[False..True] of Integer = ((1, -1), (2, -2));
 begin
   Result := Delta[Size][Registers.Flags.DF];
-end;
-
-procedure TCpu8088.WriteMemoryWord(ASegment, AOffset: Word; AData: Word);
-begin
-  WriteMemoryByte(GetPhysicalAddress(ASegment, AOffset), Lo(AData));
-  WriteMemoryByte(GetPhysicalAddress(ASegment, Word(AOffset + 1)), Hi(AData));
 end;
 
 procedure TCpu8088.Push(AValue: Word);
@@ -4737,6 +4807,8 @@ end;
 constructor TCpu8088.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
+  FMemoryBus := UnattachedMemoryBus;
+  FIOBus := UnattachedIOBus;
   Registers := TRegisters.Create(Self);
   InitInstructionHandlers;
   Reset;
@@ -4820,9 +4892,14 @@ procedure TCpu8088.FetchInstruction;
 var
   Data: Byte;
 begin
-  FillByte(FCurrentInstruction, SizeOf(FCurrentInstruction), 0);
+  { Reset only what the decoder accumulates; OpCode and Repeating are always
+    assigned below, and Code[] is only valid up to Length }
   FCurrentInstruction.CS := Registers.CS;
   FCurrentInstruction.IP := Registers.IP;
+  FCurrentInstruction.Lock := False;
+  FCurrentInstruction.Repetition := repNone;
+  FCurrentInstruction.SegmentOverride := soNone;
+  FCurrentInstruction.Length := 0;
 
   repeat
     Data := FetchCodeByte;
@@ -4863,7 +4940,17 @@ end;
 
 function TCpu8088.GetIOBus: IIOBus;
 begin
+  if FIOBus = IIOBus(UnattachedIOBus) then Exit(nil);
   Result := FIOBus;
 end;
+
+initialization
+  InitParityTable;
+  UnattachedMemoryBus := TUnattachedMemoryBus.Create;
+  UnattachedIOBus := TUnattachedIOBus.Create;
+
+finalization
+  FreeAndNil(UnattachedMemoryBus);
+  FreeAndNil(UnattachedIOBus);
 
 end.
