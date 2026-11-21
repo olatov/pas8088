@@ -227,6 +227,8 @@ type
       Number: Byte;
     end;
     FNmiPending: Boolean;
+    { Set by segment register loads; blocks IRQ/NMI/trap for one instruction }
+    FInterruptShadow: Boolean;
     FCurrentInstruction: TInstruction;
     FWaitStates: Integer;
 
@@ -2044,6 +2046,7 @@ end;
 procedure TCpu8088.HandlePopES;
 begin
   Registers.ES := Pop;
+  FInterruptShadow := True;
 end;
 
 procedure TCpu8088.HandleOrRM8Reg8;
@@ -2110,6 +2113,7 @@ end;
 procedure TCpu8088.HandlePopCS;
 begin
   Registers.CS := Pop;
+  FInterruptShadow := True;
 end;
 
 procedure TCpu8088.HandleAdcRM8Reg8;
@@ -2220,6 +2224,7 @@ end;
 procedure TCpu8088.HandlePopSS;
 begin
   Registers.SS := Pop;
+  FInterruptShadow := True;
 end;
 
 procedure TCpu8088.HandleSbbALImm8;
@@ -2260,6 +2265,7 @@ end;
 procedure TCpu8088.HandlePopDS;
 begin
   Registers.DS := Pop;
+  FInterruptShadow := True;
 end;
 
 procedure TCpu8088.HandleAndRM8Reg8;
@@ -2995,6 +3001,7 @@ var
 begin
   ModRM := FetchModRM;
   Registers.SetByIndex16(Ord(riES) + (ModRM.Reg and $03), ReadRM16(ModRM));
+  FInterruptShadow := True;
 end;
 
 procedure TCpu8088.HandlePopRM16;
@@ -4753,6 +4760,7 @@ begin
 
   FNmiPending := False;
   FHardwareInterrupt.Pending := False;
+  FInterruptShadow := False;
 
   Registers.Flags.Reset;
 
@@ -4772,17 +4780,20 @@ begin
     Exit;
   end;
 
-  if FNmiPending then
+  if not FInterruptShadow then
   begin
-    FNmiPending := False;
-    EnterISR(2);
-    Exit;
-  end;
+    if FNmiPending then
+    begin
+      FNmiPending := False;
+      EnterISR(2);
+      Exit;
+    end;
 
-  if FHardwareInterrupt.Pending and (Registers.Flags.IF_ or (FHardwareInterrupt.Number = 0)) then
-  begin
-    HandleHardwareInterrupt;
-    Exit;
+    if FHardwareInterrupt.Pending and (Registers.Flags.IF_ or (FHardwareInterrupt.Number = 0)) then
+    begin
+      HandleHardwareInterrupt;
+      Exit;
+    end;
   end;
 
   if Halted then Exit;
@@ -4794,12 +4805,15 @@ begin
   if not FCurrentInstruction.Repeating then FetchInstruction;
 
   Trace := Registers.Flags.TF;
+  { The shadow covers exactly one executed instruction; a segment load
+    inside it sets it again }
+  FInterruptShadow := False;
   ExecuteCurrentInstruction;
 
   if Assigned(OnAfterInstruction) then
     OnAfterInstruction(Self, FCurrentInstruction);
 
-  if Trace then EnterISR(1);
+  if Trace and not FInterruptShadow then EnterISR(1);
 end;
 
 procedure TCpu8088.FetchInstruction;
