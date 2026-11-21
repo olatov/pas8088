@@ -106,25 +106,25 @@ type
     function GetValue: Word;
     procedure SetValue(AValue: Word);
 
-    procedure UpdatePF8(AValue: Byte);
-    procedure UpdateZF8(AValue: Byte);
-    procedure UpdateSF8(AValue: Byte);
-    procedure UpdateAFAdd8(AAOp, ABOp, ACarryIn: Byte; AResult: Int16);
-    procedure UpdateOFAdd8(AAOp, ABOp, ACarryIn: Byte);
-    procedure UpdateCFAdd8(AResult: Int16);
-    procedure UpdateAFSub8(AAOp, ABOp, ACarryIn: Byte);
-    procedure UpdateOFSub8(AAOp, ABOp: Byte; AResult: Int16);
-    procedure UpdateCFSub8(AAOp, ABOp, CarryIn: Byte);
+    procedure UpdatePF8(AValue: Byte); inline;
+    procedure UpdateZF8(AValue: Byte); inline;
+    procedure UpdateSF8(AValue: Byte); inline;
+    procedure UpdateAFAdd8(AAOp, ABOp, ACarryIn: Byte; AResult: Int16); inline;
+    procedure UpdateOFAdd8(AAOp, ABOp, ACarryIn: Byte); inline;
+    procedure UpdateCFAdd8(AResult: Int16); inline;
+    procedure UpdateAFSub8(AAOp, ABOp, ACarryIn: Byte); inline;
+    procedure UpdateOFSub8(AAOp, ABOp: Byte; AResult: Int16); inline;
+    procedure UpdateCFSub8(AAOp, ABOp, CarryIn: Byte); inline;
 
-    procedure UpdatePF16(AValue: Word);
-    procedure UpdateZF16(AValue: Word);
-    procedure UpdateSF16(AValue: Word);
-    procedure UpdateAFAdd16(AAOp, ABOp, ACarryIn: Word; AResult: Int32);
-    procedure UpdateOFAdd16(AAOp, ABOp, ACarryIn: Word);
-    procedure UpdateCFAdd16(AResult: Int32);
-    procedure UpdateAFSub16(AAOp, ABOp, ACarryIn: Word);
-    procedure UpdateOFSub16(AAOp, ABOp: Word; AResult: Int32);
-    procedure UpdateCFSub16(AAOp, ABOp, ACarryIn: Word);
+    procedure UpdatePF16(AValue: Word); inline;
+    procedure UpdateZF16(AValue: Word); inline;
+    procedure UpdateSF16(AValue: Word); inline;
+    procedure UpdateAFAdd16(AAOp, ABOp, ACarryIn: Word; AResult: Int32); inline;
+    procedure UpdateOFAdd16(AAOp, ABOp, ACarryIn: Word); inline;
+    procedure UpdateCFAdd16(AResult: Int32); inline;
+    procedure UpdateAFSub16(AAOp, ABOp, ACarryIn: Word); inline;
+    procedure UpdateOFSub16(AAOp, ABOp: Word; AResult: Int32); inline;
+    procedure UpdateCFSub16(AAOp, ABOp, ACarryIn: Word); inline;
   end;
 
   { TRegisters }
