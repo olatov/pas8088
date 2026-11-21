@@ -1466,7 +1466,7 @@ end;
 function TCpu8088.RaiseHardwareInterrupt(ANumber: Byte): Boolean;
 begin
   Result := False;
-  if (not Registers.Flags.IF_) or Registers.Flags.TF then Exit;
+  if (not Registers.Flags.IF_) or FHardwareInterrupt.Pending then Exit;
 
   FHardwareInterrupt.Pending := True;
   FHardwareInterrupt.Number := ANumber;
