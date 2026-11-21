@@ -1494,11 +1494,11 @@ begin
   Result := ReadMemoryByte(Registers.CS, Registers.IP);
   Registers.IP := Registers.IP + 1;
 
-  FCurrentInstruction.Code[FCurrentInstruction.Length] := Result;
-  Inc(FCurrentInstruction.Length);
-
-  if FCurrentInstruction.Length > Length(FCurrentInstruction.Code) then
-    raise Exception.Create('Instruction too long');
+  if FCurrentInstruction.Length < Length(FCurrentInstruction.Code) then
+  begin
+    FCurrentInstruction.Code[FCurrentInstruction.Length] := Result;
+    Inc(FCurrentInstruction.Length);
+  end;
 end;
 
 function TCpu8088.FetchCodeWord: Word;
@@ -1888,8 +1888,7 @@ begin
       $ED:      FInstructionHandlers[I] := @HandleInAXDX;
       $EE:      FInstructionHandlers[I] := @HandleOutDXAL;
       $EF:      FInstructionHandlers[I] := @HandleOutDXAX;
-      { $F0 Lock [perfix] }
-      $F1:      FInstructionHandlers[I] := @HandleInt1;
+      { $F0, $F1 Lock [perfix] }
       { $F2 Repne [prefix] }
       { $F3 Repe [prefix] }
       $F4:      FInstructionHandlers[I] := @HandleHlt;
@@ -4722,7 +4721,7 @@ begin
   repeat
     Data := FetchCodeByte;
     case Data of
-      $F0: FCurrentInstruction.Lock := True;
+      $F0, $F1: FCurrentInstruction.Lock := True;
       $F2: FCurrentInstruction.Repetition := repRepNE;
       $F3: FCurrentInstruction.Repetition := repRep;
       $26: FCurrentInstruction.SegmentOverride := soES;
